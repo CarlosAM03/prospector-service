@@ -1,928 +1,190 @@
-# Prospector Service
+# Prospector Service — 0.1.0.dev0
 
-## Biblioteca de exportación implementada
+Aplicación FastAPI real para la integración inicial de Prospector Engine con Platform.
+Acepta Jobs autenticados, ejecuta el Engine independiente fuera del event loop y envía
+callbacks contractuales. Reutiliza prospector-export para generar CSV/XLSX en Python.
 
-[`packages/prospector_export`](packages/prospector_export/README.md) contiene
-`prospector-export` 0.1.0: CSV independiente de dependencias externas, XLSX opcional
-con openpyxl, artefactos en memoria y adaptador FastAPI opcional. Extraída del commit
-congelado CLI v1.0.0 `bd50cf7cbba76ccd75517d06037662dff4797b05`.
-La aplicación FastAPI y su conexión con Engine todavía no están implementadas aquí.
-El export de Platform continúa deshabilitado (503); la operación HTTP interna propuesta
-requiere aprobación del propietario. Véanse [decisiones pendientes](packages/prospector_export/docs/decisions-pending.md).
-La descripción conceptual siguiente no representa una integración ya operativa.
-
-
-Servicio de prospección desarrollado con **Python + FastAPI** que integra el **Prospector Engine** como módulo interno de lógica de extracción.
-
-El servicio proporciona una interfaz API estructurada para que otros componentes de la plataforma puedan solicitar operaciones de prospección sin interactuar directamente con Playwright, Google Maps, crawlers o los componentes internos del motor.
-
-> **Estado:** MVP inicial / arquitectura tentativa
-> **Propósito actual:** Definición de la frontera de servicio e integración del motor
-> **Motor:** Prospector Engine integrado como módulo interno
-> **No representa todavía una implementación completa de producción.**
+**SINGLE PROCESS · SINGLE WORKER · NON-DURABLE QUEUE · DEVELOPMENT / INITIAL INTEGRATION.**
+No es una release estable ni una integración productiva habilitada de Platform.
 
 ---
 
-## 1. Objetivo
-
-Prospector Service tiene como objetivo proporcionar una **interfaz de servicio para ejecutar procesos de prospección** utilizando el motor de extracción existente.
-
-El servicio encapsula la complejidad técnica del proceso de extracción y proporciona una interfaz estructurada basada en:
-
-* HTTP;
-* FastAPI;
-* DTOs;
-* validación de tipos;
-* validación de datos de entrada;
-* orquestación del motor;
-* transformación de resultados.
-
-Conceptualmente:
+## Frontera y estado
 
 ```text
-┌──────────────────────────────────────┐
-│          Prospector Service          │
-│                                      │
-│              FastAPI                 │
-│                 │                    │
-│        Request / Response DTOs       │
-│                 │                    │
-│          Service Layer               │
-│                 │                    │
-│        Engine Orchestration          │
-│                 │                    │
-│        ┌───────────────────┐         │
-│        │ Prospector Engine │         │
-│        │                   │         │
-│        │ Google Maps       │         │
-│        │ Extraction        │         │
-│        │ Detail Panel      │         │
-│        │ Website Enrichment│         │
-│        └───────────────────┘         │
-└──────────────────────────────────────┘
+Flutter -> NestJS Platform -> FastAPI -> bounded queue -> single Engine thread
+                                   -> callbacks -> NestJS Platform
+                                   -> export_results -> prospector-export
 ```
 
----
+NestJS conserva JWT, RBAC, tenant, autorización del Job y persistencia SaaS. Service no
+administra usuarios, no consulta PostgreSQL y no implementa scraping/normalización
+paralelos. Engine se invoca mediante su API Python pública, sin HTTP ni copia de código.
 
-## 2. Papel dentro de la arquitectura
+- Engine 0.1.0.dev0: repositorio oficial, commit exacto
+  `70f6081688db5c5bc5ea612f5fabd5724aab0b20`, publicado en main con CI verde y protección.
+- Procedencia histórica del Engine: CLI v1.0.0,
+  `bd50cf7cbba76ccd75517d06037662dff4797b05`; no se importa CLI.
+- Export 0.1.0: API pública de [packages/prospector_export](packages/prospector_export/README.md).
+  Dependencia reproducible desde commit Service `0494f2b385e38c6a83202290a13fab33e345c7c4`,
+  subdirectorio del paquete. Su implementación local permanece intacta.
+- El Backend inspeccionado aún devuelve 503 para iniciar Jobs/callbacks/exportación.
+  Este bootstrap no activa su adaptador ni modifica Backend/Flutter.
 
-Prospector Service forma parte de una arquitectura mayor:
+## Instalación y ejecución
 
-```text
-┌──────────────────────────┐
-│      Cliente Flutter     │
-└────────────┬─────────────┘
-             │
-             ▼
-┌──────────────────────────┐
-│      SaaS Backend        │
-│      NestJS + Prisma     │
-│                          │
-│  - Usuarios              │
-│  - Tenants               │
-│  - Campañas              │
-│  - Reglas de negocio     │
-│  - Autorización          │
-└────────────┬─────────────┘
-             │
-             │ HTTP
-             ▼
-┌──────────────────────────┐
-│    Prospector Service    │
-│      Python + FastAPI    │
-│                          │
-│  ┌────────────────────┐  │
-│  │ Prospector Engine  │  │
-│  │                    │  │
-│  │ Extracción         │  │
-│  │ Enriquecimiento    │  │
-│  └────────────────────┘  │
-└──────────────────────────┘
+Python >=3.11; Git accesible para instalar dependencias fijadas por SHA. Desde este
+repositorio, preferiblemente en una ruta corta en Windows:
+
+```powershell
+python -m venv .venv
+.venv/Scripts/Activate.ps1
+python -m pip install -c requirements/constraints.txt -e ".[dev]"
+# Sólo runtime Chromium opt-in, en un cache propio del Service:
+$env:PLAYWRIGHT_BROWSERS_PATH = "$PWD/.cache/browsers"
+python -m playwright install chromium
+# Establecer las variables de .env.example en el entorno (no se carga automáticamente).
+python -m prospector_service
 ```
 
-El cliente Flutter **no consume directamente** Prospector Service.
+Linux usa `.venv/bin/activate` y, para Chromium, `playwright install --with-deps chromium`.
+La instalación puede requerir red; las pruebas offline no usan Maps ni Backend real.
+El entorno del Service no se comparte con Engine. Las referencias Git son inmutables,
+no main flotante ni rutas personales. Para desarrollo del exportador puede instalarse
+`pip install -e packages/prospector_export` por separado; no es necesario para ejecutar Service.
 
-El SaaS Backend funciona como consumidor del servicio y conserva la responsabilidad sobre las reglas de negocio de la plataforma.
+`python -m prospector_service` / `prospector-service` fija un único worker ASGI.
+No usar múltiples procesos, reload en despliegue o réplicas para compartir este registry.
 
----
+## Configuración
 
-## 3. Responsabilidades
+[.env.example](.env.example) contiene todas las variables consumidas y ningún secreto real.
+`Settings.from_env()` valida tipos. Claves vacías o configuración incompleta cierran la
+aceptación y readiness; liveness sigue disponible.
 
-### Prospector Service
+| Variables | Uso |
+|---|---|
+| APP_ENV, HOST, PORT, LOG_LEVEL | Modo, bind ASGI y logging |
+| INTERNAL_API_KEY | X-API-Key entrante; comparación constante; no JWT |
+| PLATFORM_CALLBACK_ORIGIN, CALLBACK_API_KEY | Destino Platform único y credencial saliente |
+| ALLOW_LOCAL_CALLBACKS | Localhost sólo con opt-in explícito, prohibido en production |
+| ENGINE_BROWSER, ENGINE_HEADLESS | msedge baseline; chromium explícito; sin fallback |
+| ENGINE_WORKER_CONCURRENCY | Sólo 1 en esta implementación |
+| QUEUE_CAPACITY, MAX_REGISTERED_JOBS | Cola pendiente (16) y registry total (100) |
+| MAX_REQUEST_BYTES, MAX_RESULT_BYTES | 64 KiB por request; 1 MiB de resultados por Job |
+| CALLBACK_TIMEOUT, CALLBACK_MAX_ATTEMPTS, CALLBACK_BACKOFF | Reintentos iniciales acotados |
+| SHUTDOWN_GRACE_SECONDS | Drenado antes de solicitar cancelación cooperativa |
 
-El servicio será responsable de:
+Los límites/políticas son mecanismos iniciales configurables, no decisiones productivas
+definitivas. El registry conserva request, tres eventos y resultados hasta reinicio:
+no TTL, eviction, recuperación ni entrega durable. Una vez lleno devuelve 503.
 
-* Exponer endpoints HTTP.
-* Definir contratos de entrada.
-* Definir contratos de salida.
-* Validar requests.
-* Validar tipos.
-* Transformar DTOs a objetos utilizados por el motor.
-* Orquestar la ejecución del motor.
-* Gestionar errores propios de la frontera HTTP.
-* Transformar resultados del motor en respuestas estructuradas.
-* Controlar aspectos propios de la ejecución del servicio.
+## API implementada
 
-### Prospector Engine
+| Método / ruta | Comportamiento |
+|---|---|
+| POST /api/v1/prospecting/jobs | X-API-Key, validación, aceptación inmediata 202 |
+| GET /health/live | Proceso vivo; no scraping ni llamadas externas |
+| GET /health/ready | Configuración, prueba real de Engine/browser al arranque, worker y capacidad |
 
-El motor será responsable de:
+El request es `StartJobRequest`: jobId/tenantId CUID, query y callbackUrl. Query contiene
+keyword/location no vacíos, source=google_maps y limit entero 1–100. No hay clamp ni
+cambio silencioso del texto. Los errores de validación producen 400, no 422.
+Se preservan los envelopes success/data/meta y success=false/error con timestamp UTC;
+401 para credencial inválida, 409 para jobId repetido y 503 por indisponibilidad/capacidad.
+No se registra un Job que no pudo encolarse.
 
-* Navegar por Google Maps.
-* Ejecutar búsquedas.
-* Cargar resultados.
-* Extraer información de negocios.
-* Enriquecer información mediante el detail panel.
-* Realizar enriquecimiento mediante websites.
-* Construir los objetos de dominio propios de la extracción.
+No existen rutas de cancelación, lectura/listado de Jobs, exportación o recepción de
+callbacks del Platform. La biblioteca/adaptadores internos no autorizan esas APIs.
+Los endpoints operativos no sustituyen el contrato de dominio.
 
-### SaaS Backend
+## Jobs, Engine, resultados y callbacks
 
-El backend principal será responsable de:
+Un único ThreadPoolExecutor ejecuta Engine síncrono y su prueba de browser. El worker
+consume la cola en orden; el request HTTP no espera la búsqueda. Lifecycle implementado:
+QUEUED -> RUNNING -> COMPLETED o FAILED. CANCELLED sólo puede emitirse por apagado
+cooperativo, sin endpoint HTTP. Durante shutdown se deja de aceptar, se drena hasta la
+gracia y después se solicita cancelación; se espera cleanup real. Una llamada browser
+bloqueante puede exceder esa gracia: no se mata ni abandona un thread activo.
 
-* Usuarios.
-* Tenants.
-* Autenticación.
-* Autorización.
-* Campañas.
-* Reglas de negocio.
-* Persistencia de la plataforma.
-* Contexto del tenant.
-* Decidir cómo utilizar y almacenar los resultados de prospección.
+El adaptador consume SearchQuery, EngineConfig, ProspectorEngine y scopes públicos.
+Mapea los siete campos de NormalizedBusiness, preservando orden, nulos y valores.
+source proviene de la query; sourceIdentifier sólo de evidencia VERIFIED del namespace
+google_maps/google_place_id; metadata=null. Nunca se infiere un Place ID. Email/website
+inválidos provocan fallo explícito de mapping, sin corregir ni perder datos silenciosamente.
 
----
+El cliente saliente usa el endpoint aprobado del Backend:
+`POST /api/v1/internal/prospecting-jobs/{jobId}/events`. No lo expone en Service.
+Cada evento tiene UUID, secuencia monotónica por Job y timestamp UTC; progress=null,
+results sólo en COMPLETED (también []), error sólo en FAILED. No se inventan porcentajes.
+Reintentos conservan UUID/secuencia/cuerpo exactos; se reintenta timeout/red, 408, 429 y
+5xx, con máximo configurable. 401/4xx y redirecciones fallan sin seguimiento.
+Un fallo final de entrega se registra y no cambia el resultado del Engine; no hay outbox,
+replay persistente ni garantía de que Platform reciba todos los eventos.
 
-## 4. Separación entre extracción y negocio
+callbackUrl debe ser exactamente la ruta de ese Job, absoluta en el origen configurado
+o relativa a él. Se rechazan otros hosts, rutas, query/fragment/userinfo y redirecciones.
+HTTP localhost sólo se permite explícitamente en desarrollo/test. El origen configurado
+es una decisión de despliegue de confianza; no se acepta desde el cliente final.
+[Contrato y drifts](docs/contracts.md) describe estas restricciones adicionales.
 
-Una regla fundamental del diseño es:
+## Exportación interna
 
-> **La lógica de extracción pertenece al Prospector Engine; la lógica de negocio pertenece al SaaS Backend.**
+`prospector_service.adapters.export.export_results(records, "csv" | "xlsx")` devuelve
+ExportArtifact utilizando exclusivamente prospector-export. Conserva Name, Category,
+Address, Phone, Email, Website, Language y Businesses; no añade tenant/job/metadata.
+No se añadió la ruta propuesta de exportación: [decisiones pendientes](docs/decisions-pending.md).
 
-Por ejemplo:
+## Docker
 
-```text
-"Buscar restaurantes en Tijuana"
+```powershell
+docker build -t prospector-service:dev .
+docker run --rm --init --shm-size=1g --cap-drop=ALL --security-opt=no-new-privileges -p 8000:8000 --env-file .env prospector-service:dev
+python scripts/container_smoke.py --image prospector-service:dev
 ```
 
-es una solicitud de extracción.
+Contexto exclusivo Service; builder obtiene Engine/export de commits oficiales y construye
+wheels, runtime instala sin Git ni dependencias de desarrollo. Base fijada por digest,
+Chromium instalado, UID 10001. No se incluyen .env, CLI, Backend o Flutter. HOST=0.0.0.0,
+PORT=8000 por defecto en la imagen; PORT se consume al iniciar ASGI.
+La imagen selecciona Chromium/headless para integración controlada; no certifica browser
+productivo ni Google Maps live. Sin secretos configurados readiness es 503.
+El smoke usa credenciales ficticias de test, valida ASGI y browser sin aceptar Jobs.
 
-El motor puede interpretar:
+## Tests, build y CI
 
-```text
-keyword = "restaurantes"
-location = "Tijuana"
+```powershell
+python -m compileall -q src
+python -m ruff check .
+python -m ruff format --check .
+python -m pytest -q -m "not browser"
+python -m pytest -q -m browser
+python -m pytest -q packages/prospector_export/tests
+python -m build
+# Preparación wheelhouse (puede usar red), seguida de smoke totalmente offline:
+python -m pip wheel -c requirements/constraints.txt --wheel-dir .validation/wheels ".[dev]"
+python scripts/installed_smoke.py --wheelhouse .validation/wheels
 ```
 
-y obtener:
-
-```text
-Business[]
-```
-
-Pero decisiones como:
-
-```text
-¿A qué tenant pertenece?
-¿Quién puede ejecutar la prospección?
-¿La campaña está activa?
-¿Cuántos prospectos puede generar el tenant?
-¿Se debe guardar el prospecto?
-¿El prospecto ya existe?
-¿Puede el usuario ejecutar otra búsqueda?
-```
-
-son responsabilidades de la plataforma y no del motor de extracción.
-
----
-
-## 5. Arquitectura interna
-
-La estructura propuesta inicialmente es:
-
-```text
-prospector-service/
-│
-├── app/
-│   │
-│   ├── main.py
-│   │
-│   ├── api/
-│   │   ├── routes/
-│   │   │   └── prospecting.py
-│   │   │
-│   │   └── dependencies.py
-│   │
-│   ├── schemas/
-│   │   ├── prospecting_request.py
-│   │   ├── prospecting_response.py
-│   │   └── business.py
-│   │
-│   ├── services/
-│   │   └── prospecting_service.py
-│   │
-│   ├── engine/
-│   │   └── prospector/
-│   │       ├── core/
-│   │       ├── domain/
-│   │       ├── navigation/
-│   │       ├── selectors/
-│   │       ├── website/
-│   │       └── utils/
-│   │
-│   ├── config/
-│   │
-│   └── errors/
-│
-├── tests/
-│   ├── api/
-│   ├── services/
-│   └── engine/
-│
-├── pyproject.toml
-├── requirements.txt
-├── .env.example
-└── README.md
-```
-
-La carpeta:
-
-```text
-app/engine/prospector/
-```
-
-representa el **Prospector Engine integrado dentro del servicio**.
-
-No representa un proceso independiente ni otro servidor.
-
----
-
-## 6. Flujo de una solicitud
-
-El flujo conceptual de una operación es:
-
-```text
-HTTP Request
-     │
-     ▼
-FastAPI Route
-     │
-     ▼
-Request DTO
-     │
-     ▼
-Validation
-     │
-     ▼
-Prospecting Service
-     │
-     ▼
-Engine Input
-     │
-     ▼
-Prospector Engine
-     │
-     ├── Google Maps
-     ├── Result Extraction
-     ├── Detail Enrichment
-     └── Website Enrichment
-     │
-     ▼
-Engine Result
-     │
-     ▼
-Response Transformation
-     │
-     ▼
-Response DTO
-     │
-     ▼
-HTTP Response
-```
-
-El servicio funciona como **orquestador de la ejecución del motor**.
-
----
-
-## 7. Request DTO
-
-El servicio no deberá aceptar directamente objetos internos del motor como contrato HTTP.
-
-La entrada pública deberá estar definida mediante DTOs estructurados.
-
-Conceptualmente:
-
-```python
-ProspectingRequest(
-    keyword="restaurantes",
-    location="Tijuana",
-    source="google_maps",
-    limit=50
-)
-```
-
-El DTO será responsable de establecer:
-
-* tipos;
-* campos requeridos;
-* campos opcionales;
-* valores permitidos;
-* límites;
-* validaciones de entrada.
-
-La representación exacta todavía es tentativa.
-
----
-
-## 8. Transformación Request → Engine
-
-El servicio deberá actuar como frontera entre el contrato HTTP y el contrato interno del motor.
-
-```text
-ProspectingRequest
-        │
-        ▼
-Service Layer
-        │
-        ▼
-SearchQuery
-        │
-        ▼
-Prospector Engine
-```
-
-Por ejemplo:
-
-```text
-HTTP
-{
-    keyword,
-    location,
-    source,
-    limit
-}
-        │
-        ▼
-DTO validation
-        │
-        ▼
-SearchQuery
-        │
-        ▼
-search_businesses()
-```
-
-Esto evita que el contrato HTTP dependa directamente de las estructuras internas del motor.
-
----
-
-## 9. Response DTO
-
-El servicio deberá proporcionar respuestas estructuradas.
-
-Conceptualmente:
-
-```text
-ProspectingResponse
-│
-├── query
-├── businesses[]
-└── execution_time
-```
-
-Cada prospecto podrá representar información obtenida por el motor:
-
-```text
-Business
-├── name
-├── category
-├── address
-├── phone
-├── website
-├── email
-├── language
-├── website_title
-├── website_description
-└── website_status
-```
-
-La estructura definitiva de la respuesta todavía deberá validarse conforme se defina el contrato del servicio.
-
----
-
-## 10. Validación y tipado
-
-La frontera HTTP deberá validar la información antes de iniciar el motor.
-
-Conceptualmente:
-
-```text
-Request
-   │
-   ▼
-Type Validation
-   │
-   ▼
-Business Validation
-   │
-   ▼
-Engine
-```
-
-Esto permite evitar que errores de entrada lleguen directamente a componentes como:
-
-* Playwright;
-* Google Maps;
-* Selectors;
-* WebsiteCrawler.
-
-La validación del servicio no sustituye las validaciones internas del motor; cada capa debe validar aquello que le corresponde.
-
----
-
-## 11. Orquestación
-
-El servicio deberá contener una capa responsable de coordinar la ejecución.
-
-Conceptualmente:
-
-```python
-ProspectingService
-        │
-        ├── recibe DTO validado
-        │
-        ├── construye SearchQuery
-        │
-        ├── ejecuta Prospector Engine
-        │
-        ├── procesa resultado
-        │
-        └── construye Response DTO
-```
-
-El servicio **no deberá duplicar la lógica de extracción**.
-
-Por ejemplo, la lógica:
-
-```text
-buscar feed
-hacer scroll
-encontrar anchors
-extraer aria-label
-abrir detail panel
-extraer website
-crawl website
-extraer emails
-```
-
-pertenece al Engine.
-
-El servicio solamente debe coordinar su ejecución.
-
----
-
-## 12. Prospector Engine integrado
-
-El Engine se considera un módulo interno del servicio:
-
-```text
-Prospector Service
-│
-├── API
-├── Schemas
-├── Services
-├── Configuration
-├── Error handling
-│
-└── Engine
-    │
-    ├── Search
-    ├── Google Maps
-    ├── Extraction
-    ├── Navigation
-    ├── Selectors
-    └── Website Enrichment
-```
-
-No existe una comunicación HTTP entre Service y Engine.
-
-La comunicación es mediante llamadas internas de Python:
-
-```text
-ProspectingService
-        │
-        ▼
-search_businesses()
-        │
-        ▼
-SearchResult
-```
-
-Esto permite mantener el motor como una pieza reutilizable sin convertirlo artificialmente en un microservicio independiente.
-
----
-
-## 13. Google Maps como fuente
-
-La primera fuente soportada es:
-
-```text
-Google Maps
-```
-
-El motor contiene actualmente componentes específicos de esta fuente:
-
-* `GoogleMapsNavigation`;
-* perfiles de selectores;
-* selectores DOM;
-* extracción de `place_id`;
-* navegación;
-* result list;
-* detail panel.
-
-Estos componentes forman parte del Engine y no de la capa FastAPI.
-
-La arquitectura podrá soportar otras fuentes en el futuro, pero no se considera un requisito del MVP.
-
----
-
-## 14. Website Enrichment
-
-El enriquecimiento web forma parte del proceso de extracción.
-
-El flujo es:
-
-```text
-Google Maps
-     │
-     ▼
-Business.website
-     │
-     ▼
-WebsiteCrawler
-     │
-     ▼
-WebsiteParser
-     │
-     ▼
-WebsiteExtractor
-     │
-     ▼
-WebsiteMetadata
-     │
-     ▼
-Business enriquecido
-```
-
-Prospector Service únicamente orquesta la ejecución de este pipeline mediante el Engine.
-
-No implementa directamente la extracción HTML ni el crawling.
-
----
-
-## 15. Multi-Tenancy
-
-La administración de tenants **no pertenece a Prospector Service en esta etapa**.
-
-El contexto de tenant pertenece al dominio de la plataforma SaaS.
-
-Conceptualmente:
-
-```text
-Flutter
-   │
-   ▼
-SaaS Backend
-   │
-   ├── Usuario
-   ├── Tenant
-   ├── Autorización
-   ├── Campaña
-   │
-   ▼
-Prospector Service
-   │
-   ▼
-Prospector Engine
-```
-
-El SaaS Backend determina:
-
-* quién ejecuta la operación;
-* para qué tenant;
-* bajo qué reglas;
-* con qué permisos;
-* cómo se utilizarán los resultados.
-
-Prospector Service se concentra en la **capacidad técnica de prospección**.
-
-La forma definitiva en que el contexto del tenant pueda acompañar una solicitud al servicio todavía deberá definirse como parte del contrato entre sistemas.
-
----
-
-## 16. Persistencia
-
-Prospector Service no tiene como responsabilidad principal administrar la base de datos de la plataforma SaaS.
-
-El resultado de la prospección puede regresar al consumidor:
-
-```text
-Prospector Engine
-      │
-      ▼
-Prospector Service
-      │
-      ▼
-SaaS Backend
-      │
-      ▼
-PostgreSQL
-```
-
-El SaaS Backend decidirá posteriormente:
-
-* qué resultados almacenar;
-* cómo asociarlos a un tenant;
-* cómo asociarlos a una campaña;
-* cómo manejar duplicados;
-* qué información persistir.
-
----
-
-## 17. Manejo de errores
-
-El servicio deberá establecer una frontera entre errores internos del motor y respuestas HTTP.
-
-Conceptualmente:
-
-```text
-Engine Error
-     │
-     ▼
-Service Layer
-     │
-     ▼
-Service Exception
-     │
-     ▼
-HTTP Response
-```
-
-Ejemplos de categorías:
-
-```text
-Invalid Request
-    ↓
-400
-
-Unsupported Source
-    ↓
-4xx
-
-Extraction Failure
-    ↓
-5xx / respuesta estructurada
-
-External Source Failure
-    ↓
-5xx / respuesta estructurada
-
-Partial Extraction
-    ↓
-Resultado parcial
-```
-
-Los códigos y contratos definitivos todavía no están establecidos.
-
----
-
-## 18. Responsabilidades por capa
-
-| Capa           | Responsabilidad               |
-| -------------- | ----------------------------- |
-| API            | HTTP y endpoints              |
-| DTOs / Schemas | Contratos y validación        |
-| Service        | Orquestación                  |
-| Engine         | Extracción                    |
-| Navigation     | Navegación                    |
-| Selectors      | Resolución de elementos       |
-| Website        | Crawling y enriquecimiento    |
-| Domain         | Modelos propios de extracción |
-| SaaS Backend   | Reglas de negocio             |
-| PostgreSQL     | Persistencia de plataforma    |
-
-La separación busca evitar que la lógica de extracción se mezcle con las reglas de negocio del SaaS.
-
----
-
-## 19. Qué NO debe hacer Prospector Service
-
-El servicio no debe asumir responsabilidades que pertenecen al SaaS Backend.
-
-No será responsable de:
-
-* administrar tenants;
-* administrar usuarios de la plataforma;
-* administrar campañas;
-* decidir permisos de negocio;
-* implementar reglas comerciales;
-* administrar la base de datos del SaaS;
-* servir la aplicación Flutter;
-* decidir qué prospectos pertenecen a qué tenant como regla de negocio;
-* implementar nuevamente la lógica de extracción.
-
-Su responsabilidad principal es:
-
-```text
-Request
-  ↓
-Validate
-  ↓
-Orchestrate
-  ↓
-Extract
-  ↓
-Transform
-  ↓
-Response
-```
-
----
-
-## 20. Estructura conceptual completa
-
-La arquitectura actual propuesta puede resumirse como:
-
-```text
-                         SaaS Platform
-                              │
-                 ┌────────────┴────────────┐
-                 │                         │
-                 ▼                         │
-          Cliente Flutter                  │
-                 │                         │
-                 ▼                         │
-          SaaS Backend                     │
-          NestJS + Prisma                  │
-                 │                         │
-       ┌─────────┼──────────┐              │
-       │         │          │              │
-       ▼         ▼          ▼              │
-    Tenant    Campaigns   Business         │
-       │         │        Rules             │
-       └─────────┼──────────┘              │
-                 │                         │
-                 │ HTTP                    │
-                 ▼                         │
-        ┌──────────────────────┐           │
-        │  Prospector Service  │           │
-        │    Python + FastAPI  │           │
-        │                      │           │
-        │  API / DTOs          │           │
-        │       │              │           │
-        │  Service Layer       │           │
-        │       │              │           │
-        │       ▼              │           │
-        │ Prospector Engine    │           │
-        │       │              │           │
-        │  ┌────┴──────────┐   │           │
-        │  │ Google Maps   │   │           │
-        │  │ Extraction    │   │           │
-        │  │ Detail Panel  │   │           │
-        │  │ Web Enrichment│   │           │
-        │  └───────────────┘   │           │
-        └──────────────────────┘           │
-                                           │
-```
-
----
-
-## 21. Estado actual
-
-Prospector Service se encuentra en una etapa de **definición inicial**.
-
-La principal decisión arquitectónica establecida es que:
-
-> **El Prospector Engine estará integrado dentro del Prospector Service como un módulo interno de lógica de extracción.**
-
-La responsabilidad del servicio será proporcionar la frontera API y orquestar el motor mediante contratos estructurados y tipados.
-
-La responsabilidad de la plataforma SaaS continuará separada:
-
-```text
-SaaS Backend
-    │
-    └── Lógica de negocio
-        ├── Tenants
-        ├── Usuarios
-        ├── Campañas
-        ├── Autorización
-        └── Persistencia
-
-Prospector Service
-    │
-    └── Capacidad de prospección
-        ├── DTOs
-        ├── Validación
-        ├── Orquestación
-        └── Prospector Engine
-              ├── Google Maps
-              ├── Extraction
-              ├── Detail Enrichment
-              └── Website Enrichment
-```
-
----
-
-## 22. Próximos pasos
-
-La implementación podrá avanzar progresivamente:
-
-### Etapa 1 — Base del servicio
-
-* Crear proyecto FastAPI.
-* Configurar estructura.
-* Configurar Pydantic.
-* Crear endpoint inicial.
-* Crear DTOs iniciales.
-
-### Etapa 2 — Integración del Engine
-
-* Incorporar el motor auditado.
-* Mantener su comportamiento inicial.
-* Eliminar dependencias del CLI.
-* Conectar `ProspectingService` con `search_businesses()`.
-
-### Etapa 3 — Contratos
-
-* Definir Request DTO.
-* Definir Response DTO.
-* Definir errores.
-* Definir validaciones.
-* Definir transformación Engine → API.
-
-### Etapa 4 — Integración
-
-Conectar:
-
-```text
-SaaS Backend
-      │
-      ▼
-Prospector Service
-      │
-      ▼
-Prospector Engine
-```
-
-### Etapa 5 — Evolución
-
-Posteriormente podrán incorporarse:
-
-* ejecución asíncrona;
-* trabajos largos;
-* colas;
-* concurrencia;
-* observabilidad;
-* retries;
-* límites de ejecución;
-* nuevas fuentes.
-
-Estas capacidades no forman parte del MVP inicial.
-
----
-
-## 23. Decisiones abiertas
-
-Todavía deberán definirse:
-
-* Contrato definitivo del endpoint.
-* Nombre de endpoints.
-* Request DTO definitivo.
-* Response DTO definitivo.
-* Manejo de errores.
-* Manejo de resultados parciales.
-* Timeouts de servicio.
-* Concurrencia.
-* Ejecución síncrona vs. asíncrona.
-* Límites de prospección.
-* Autenticación entre SaaS Backend y Prospector Service.
-* Transporte del contexto de tenant.
-* Persistencia de resultados.
-* Deduplicación.
-* Estrategia de jobs para procesos largos.
-
-Estas decisiones deberán validarse antes de considerarlas parte de la arquitectura definitiva.
-
----
-
-## 24. Principios iniciales
-
-1. **El Engine contiene la lógica de extracción.**
-2. **El Service expone y orquesta el Engine.**
-3. **Los DTOs definen la frontera externa del servicio.**
-4. **Los tipos y validaciones deben aplicarse antes de ejecutar el motor.**
-5. **El Service no debe duplicar lógica de extracción.**
-6. **La lógica de negocio del SaaS pertenece al SaaS Backend.**
-7. **La administración de tenants pertenece al SaaS Backend.**
-8. **Flutter no debe consumir directamente el Prospector Service.**
-9. **El Engine permanece integrado dentro del Service en el MVP.**
-10. **Las decisiones todavía no definidas deberán mantenerse abiertas hasta validar los requerimientos del sistema.**
+Las pruebas separan fake Engine inyectado, fachada real instalada con adquisición
+controlada, browser local sin red y live E2E NO EJECUTADO. La copia de referencia del
+YAML tiene hash y tests contractuales; no se alteró el original Backend.
+[Testing](docs/testing.md) registra comandos/resultados y límites de evidencia.
+[Arquitectura](docs/architecture.md) explica orquestación, memoria y apagado.
+
+Se conserva .github/workflows/prospector-export.yml y se añade service-ci.yml:
+quality, unit, integration, package y docker-build. Ningún check obligatorio usa Maps
+live ni secretos de producción. La rama feature se publica para PR; no se fusiona a main.
+
+## Preparación para Platform
+
+Aplicación e integración Python inicial implementadas; habilitación productiva NO.
+Faltan decisiones sobre browser productivo, persistencia/TTL/entrega durable,
+concurrencia y política productiva de callbacks. [Decisiones](docs/decisions-pending.md)
+incluye alternativas/riesgos/recomendaciones y trabajo independiente disponible.
+El contrato admite limit>100/texto vacío/uri-reference libre; Service aplica restricciones
+seguras del Engine y de destinos, documentadas como drifts, sin modificar OpenAPI Backend.
+
+Los documentos conceptuales previos [RelacionConProspectorCLI.md](RelacionConProspectorCLI.md)
+y [DependenciasServicePlatform.md](DependenciasServicePlatform.md) son contexto histórico.
+El código y contrato aprobado prevalecen sobre sus descripciones tentativas.

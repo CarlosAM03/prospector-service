@@ -10,3 +10,7 @@
 **/dist/
 **/*.egg-info/
 **/.validation-*.log
+.env
+.env.*
+!.env.example
+/.cache/

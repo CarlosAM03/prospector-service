@@ -1,0 +1,46 @@
+[build-system]
+requires = ["setuptools>=77", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "prospector-service"
+version = "0.1.0.dev0"
+description = "Initial single-process FastAPI integration for Prospector Engine"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+  "fastapi==0.156.8",
+  "pydantic==2.14.1",
+  "httpx==0.28.1",
+  "uvicorn>=0.30,<1",
+  "email-validator>=2.2,<3",
+  "prospector-engine @ git+https://github.com/CarlosAM03/prospector-engine.git@70f6081688db5c5bc5ea612f5fabd5724aab0b20",
+  "prospector-export[xlsx] @ git+https://github.com/CarlosAM03/prospector-service.git@0494f2b385e38c6a83202290a13fab33e345c7c4#subdirectory=packages/prospector_export",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8,<10", "pytest-asyncio>=0.24,<2", "ruff>=0.11,<1", "build>=1.2,<2",
+       "setuptools>=77", "wheel", "PyYAML>=6,<7", "jsonschema[format]>=4.23,<5"]
+
+[project.scripts]
+prospector-service = "prospector_service.__main__:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+prospector_service = ["py.typed"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+markers = ["integration: installed Engine and application integration", "browser: controlled real browser smoke", "contract: approved Backend YAML parity and drifts"]
+filterwarnings = ["error::pytest.PytestUnraisableExceptionWarning"]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+extend-exclude = ["packages", ".validation", "build", "dist"]
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "I"]

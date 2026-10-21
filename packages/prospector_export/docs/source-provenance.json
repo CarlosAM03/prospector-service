@@ -1,0 +1,88 @@
+{
+  "repository": "CarlosAM03/prospector-cli",
+  "tag": "v1.0.0",
+  "tag_object": "35088b4d53c31bb4fdde6c079b5e3d2f31873a32",
+  "commit": "bd50cf7cbba76ccd75517d06037662dff4797b05",
+  "files": [
+    {
+      "path": "src/services/export_service.py",
+      "blob": "ee1546a5bce06013c5f2a35171cd16e10243ca61"
+    },
+    {
+      "path": "src/services/_export_directory.py",
+      "blob": "b71fc25418ef6a22e1e6329e0fbcde4aa0ed4162"
+    },
+    {
+      "path": "src/exporters/base.py",
+      "blob": "2e0e2cc66226417bc8c1356da1f4e9d05092a6a3"
+    },
+    {
+      "path": "src/exporters/export_view.py",
+      "blob": "16eb7d05a16b50c681b1a6461f635785b94c0286"
+    },
+    {
+      "path": "src/exporters/csv.py",
+      "blob": "31c2528c714b95f5010ce30cace7c8dfb8e815e4"
+    },
+    {
+      "path": "src/exporters/excel.py",
+      "blob": "7ba84cdaf146b91c71cb6861949c520cd38796a8"
+    },
+    {
+      "path": "src/utils/file_naming.py",
+      "blob": "688729418709c89412de1c18073738d211055d1b"
+    },
+    {
+      "path": "src/models/search_result.py",
+      "blob": "0c0b79c8d5ac964922187455c663854072b8eb77"
+    },
+    {
+      "path": "src/models/normalized_business.py",
+      "blob": "f95e7b2530e786398b6b3156b4be4565323daa18"
+    },
+    {
+      "path": "src/models/search_query.py",
+      "blob": "a35e5ea07e9cb75e3ef32a0048f785cd39a60567"
+    },
+    {
+      "path": "src/models/batch.py",
+      "blob": "7423eb327eb2b3e056059bec61eee2feb6935812"
+    },
+    {
+      "path": "tests/integration/test_export_service.py",
+      "blob": "3b12d13209900104fcf14d7e001cad37f9405b71"
+    },
+    {
+      "path": "tests/integration/test_batch_export.py",
+      "blob": "0303673ee720a0d5ff5de68206cd33cb336e5c68"
+    },
+    {
+      "path": "tests/integration/test_portable_exports.py",
+      "blob": "6c55b3c4ff25be6bb19490a2c9719a61dee1e37b"
+    },
+    {
+      "path": "docs/architecture.md",
+      "blob": "c5b534cfc158f8661b61d9ba0eb2709d7340fb75"
+    },
+    {
+      "path": "docs/history/v1.0.0/ContractInventory.md",
+      "blob": "50ef19324f9901d60b4e01e261f90b8f54a8303e"
+    },
+    {
+      "path": "LICENSE",
+      "blob": "b82d0546ac32e9a097598063f9624ca198a91efc"
+    },
+    {
+      "path": "docs/releases/v1.0.0/FREEZE.md",
+      "blob": "f56c62dcead5d2855937cde0b68e8b299066d30a"
+    },
+    {
+      "path": "docs/releases/v1.0.0/KNOWN_LIMITATIONS.md",
+      "blob": "d50d5827c072698546e5ae5953578b8897ce9908"
+    },
+    {
+      "path": "docs/releases/v1.0.0/RELEASE_NOTES.md",
+      "blob": "eb40a93b23493aab9da751a72ed3c2cdfeb26ed6"
+    }
+  ]
+}

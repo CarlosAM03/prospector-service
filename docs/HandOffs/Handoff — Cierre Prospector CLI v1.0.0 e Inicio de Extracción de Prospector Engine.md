@@ -1,6 +1,6 @@
 # Handoff — Cierre Prospector CLI v1.0.0 e Inicio de Extracción de Prospector Engine
 
-**Fecha de corte:** 8 de Octubre 2026  
+**Fecha de corte:** 21 de Octubre 2026  
 **Estado:** Prospector CLI v1.0.0 cerrado. Siguiente frente: Prospector Engine → Prospector Service.  
 **Owner técnico / integración:** Carlos Armenta
 

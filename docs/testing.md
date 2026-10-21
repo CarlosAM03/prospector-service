@@ -61,6 +61,8 @@ productiva. El registry y los eventos siguen en memoria sin TTL ni recuperación
 ejecuta quality; unit and contract en Python 3.11/3.13; integration/browser en
 Ubuntu y Windows 3.11/3.13; package/installed smoke; docker-build/container smoke.
 El estado definitivo se comprueba en los checks del PR y del commit correspondiente.
+Service CI se ejecuta en todos los PRs a main: los checks obligatorios no pueden
+filtrarse por paths, porque un PR sólo del exportador quedaría bloqueado sin ellos.
 No hay continue-on-error, Maps live ni secretos productivos. El workflow exportador
 existente permanece intacto y filtra sus propios paths.
 

@@ -2,10 +2,8 @@ name: Service CI
 on:
   push:
     branches: [main, feat/fastapi-service-foundation]
-    paths-ignore: ['packages/**']
   pull_request:
     branches: [main]
-    paths-ignore: ['packages/**']
   workflow_dispatch:
 
 permissions:

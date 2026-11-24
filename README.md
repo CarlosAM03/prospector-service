@@ -178,6 +178,9 @@ live ni secretos de producción. La rama feature se publica para PR; no se fusio
 
 ## Preparación para Platform
 
+[Fase preliminar v1.0.0 · 5×5×5](docs/service-v1-prelim/README.md) reúne el alcance
+ratificado, la auditoría, las ADR C1–C6 propuestas y los gates de aceptación.
+
 Aplicación e integración Python inicial implementadas; habilitación productiva NO.
 Faltan decisiones sobre browser productivo, persistencia/TTL/entrega durable,
 concurrencia y política productiva de callbacks. [Decisiones](docs/decisions-pending.md)

@@ -11,8 +11,14 @@ from prospector_service.worker import main
 def run(batch, browser, headless, token, send):
     assert all(
         name not in os.environ
-        for name in ("INTERNAL_API_KEY", "CALLBACK_API_KEY", "ASSERTION_KEY", "METADATA_KEY")
+        for key in ("INTERNAL_API_KEY", "CALLBACK_API_KEY", "ASSERTION_KEY", "METADATA_KEY")
+        for name in (key, f"{key}_FILE")
     )
+    assert os.environ.get("PROSPECTOR_CHROMIUM_SANDBOX") == sys.argv[4]
+    gate = Path(sys.argv[2])
+    if sys.argv[3] == "acl_probe":
+        assert (gate.parent / "credential-fixture").read_text() == "synthetic-read-probe"
+        assert os.access(gate.parent / "metadata.sqlite3", os.R_OK | os.W_OK)
     if len(sys.argv) > 3 and sys.argv[3] == "wedged":
         import subprocess
 
@@ -22,7 +28,6 @@ def run(batch, browser, headless, token, send):
         send({"type": "running", "index": 0})
         time.sleep(120)
         return
-    gate = Path(sys.argv[2])
     entries = []
     for index, job in enumerate(batch.jobs):
         send({"type": "running", "index": index})

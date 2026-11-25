@@ -178,7 +178,7 @@ def test_real_installed_engine_batch_and_pin(monkeypatch):
     assert [event["index"] for event in events if event["type"] == "running"] == [0, 1]
     assert all(entry["rows"][0]["name"] == "CAFE" for entry in events[-1]["entries"])
     direct = json.loads(distribution("prospector-engine").read_text("direct_url.json"))
-    assert direct["vcs_info"]["commit_id"] == "030a82d63a499a8abe65352d282ccc9bbc076ff3"
+    assert direct["vcs_info"]["commit_id"] == "68aca39b42a21ae8c0b54b6e6ca93840fdad27e5"
 
 
 @pytest.mark.integration
@@ -198,3 +198,32 @@ def test_real_browser_smoke_without_external_network():
         page = runtime.new_page()
         page.set_content("<title>Prospector controlled browser</title>")
         assert page.title() == "Prospector controlled browser"
+
+
+@pytest.mark.integration
+def test_protected_launch_error_does_not_retry_without_sandbox(monkeypatch):
+    from prospector_engine import ProspectorRuntimeError
+    from prospector_engine.browser import BrowserRuntime
+    from prospector_engine.engines import browser_runtime
+
+    calls = []
+
+    def launch(**options):
+        calls.append(options)
+        raise OSError("synthetic denied sandbox startup")
+
+    class Driver:
+        chromium = SimpleNamespace(launch=launch)
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_):
+            return False
+
+    monkeypatch.setenv("PROSPECTOR_CHROMIUM_SANDBOX", "1")
+    monkeypatch.setattr(browser_runtime, "sync_playwright", Driver)
+    with pytest.raises(ProspectorRuntimeError):
+        with BrowserRuntime(headless=True, channel=None):
+            pytest.fail("protected startup should fail closed")
+    assert len(calls) == 1 and calls[0]["chromium_sandbox"] is True

@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=77", "wheel"]
+requires = ["setuptools==84.2.1", "wheel==0.48.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -7,14 +7,14 @@ name = "prospector-service"
 version = "1.0.0"
 description = "Private batch FastAPI coordinator for Prospector Engine"
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.11.5"
 dependencies = [
   "fastapi==0.156.8",
   "pydantic==2.14.1",
   "httpx==0.28.1",
   "uvicorn>=0.30,<1",
   "email-validator>=2.2,<3",
-  "prospector-engine @ git+https://github.com/CarlosAM03/prospector-engine.git@030a82d63a499a8abe65352d282ccc9bbc076ff3",
+  "prospector-engine @ git+https://github.com/CarlosAM03/prospector-engine.git@68aca39b42a21ae8c0b54b6e6ca93840fdad27e5",
   "prospector-export[xlsx] @ git+https://github.com/CarlosAM03/prospector-service.git@0494f2b385e38c6a83202290a13fab33e345c7c4#subdirectory=packages/prospector_export",
 ]
 

@@ -17,6 +17,7 @@ from prospector_service.config import Settings
         {"platform_callback_origin": "http://platform.example"},
         {"platform_callback_origin": "https://platform.example:invalid"},
         {"app_env": "production", "allow_local_callbacks": True},
+        {"prospector_chromium_sandbox": "1", "engine_browser": "msedge"},
     ],
 )
 def test_invalid_settings(options):
@@ -46,3 +47,10 @@ def test_engine_imports_are_public_and_sqlite_only_in_control_plane():
                 assert not node.module.startswith(("prospector_engine.engines", "prospector_cli"))
             if isinstance(node, ast.Import) and node.names[0].name == "sqlite3":
                 assert file.name in {"metadata.py", "main.py", "coordinator.py"}
+
+
+@pytest.mark.parametrize("value", ("", "true", "2"))
+def test_protected_setting_must_be_explicit(monkeypatch, value):
+    monkeypatch.setenv("PROSPECTOR_CHROMIUM_SANDBOX", value)
+    with pytest.raises(ValidationError):
+        Settings.from_env()

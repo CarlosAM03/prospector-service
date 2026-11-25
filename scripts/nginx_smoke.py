@@ -35,6 +35,12 @@ def encode(value):
 
 def request_headers(verb, path, body=b"", key="", tenant=1, owner=1):
     now = int(time.time())
+    path, _, query = path.partition("?")
+    scope = "prospecting:batches:create"
+    if verb == "GET":
+        scope = (
+            "prospecting:results:export" if path.endswith("/export") else "prospecting:results:read"
+        )
     claims = {
         "iss": "platform",
         "aud": "prospector-service/v1",
@@ -46,10 +52,10 @@ def request_headers(verb, path, body=b"", key="", tenant=1, owner=1):
         "actorType": "owner",
         "method": verb,
         "path": path,
-        "query": "",
+        "query": query,
         "idempotencyKey": key,
         "bodySha256": hashlib.sha256(body).hexdigest(),
-        "scope": "prospecting:batches:create" if verb == "POST" else "prospecting:results:read",
+        "scope": scope,
     }
     unsigned = encode(b'{"alg":"HS256","typ":"JWT"}') + b"." + encode(json.dumps(claims).encode())
     sig = encode(hmac.digest(b"b" * 32, unsigned, "sha256"))
@@ -118,6 +124,14 @@ def main():
                 "--security-opt=no-new-privileges",
                 "--read-only",
                 "--shm-size=1g",
+                "--memory=512m",
+                "--memory-swap=512m",
+                "--ulimit",
+                "core=0",
+                "--tmpfs",
+                "/run/prospector-tmp:size=64m,uid=10001,gid=10001,mode=0700",
+                "-e",
+                "WORKER_TEMP_DIR=/run/prospector-tmp",
                 "-v",
                 f"{volume}:/var/lib/prospector",
                 "-v",
@@ -247,6 +261,9 @@ def main():
             assert request(BASE, body=payload, headers=headers) == replies[0]
             result = f"{BASE}/{bid}/jobs/{jid}/results"
             assert request(result, headers=request_headers("GET", result))[0] == 200
+            xlsx = f"{BASE}/{bid}/jobs/{jid}/export?format=xlsx"
+            export_status, content = request(xlsx, headers=request_headers("GET", xlsx))
+            assert export_status == 200 and content.startswith(b"PK")
             # A truncated upload must neither become an admission nor be retried by Nginx.
             incomplete_id = "c" + "9" * 24
             incomplete = payload.replace(bid.encode(), incomplete_id.encode()).replace(
@@ -265,15 +282,25 @@ def main():
                 lambda: len([event for event in events() if event["kind"] == "TERMINAL"]) == 26
             )
             scanner = (
-                "from pathlib import Path; paths=Path('/var/lib/prospector').glob('*.sqlite3*'); "
-                "assert all(b'SYNTHETIC_' not in p.read_bytes() for p in paths)"
+                "import resource; from pathlib import Path; "
+                "paths=list(Path('/var/lib/prospector').glob('*.sqlite3*')); "
+                "assert any(p.name.endswith('-wal') for p in paths); "
+                "assert all(b'SYNTHETIC_' not in p.read_bytes() for p in paths); "
+                "assert not list(Path('/run/prospector-tmp').iterdir()); "
+                "assert resource.getrlimit(resource.RLIMIT_CORE)==(0,0); "
+                "assert Path('/sys/fs/cgroup/memory.swap.max').read_text().strip()=='0'"
             )
             docker("exec", engine, "python", "-c", scanner)
+            for container in (engine, nginx):
+                logs = subprocess.check_output(
+                    ["docker", "logs", container], stderr=subprocess.STDOUT
+                )
+                assert b"SYNTHETIC_" not in logs
             docker("restart", "--time", "75", engine)
             await_state(lambda: request("/health/ready")[0] == 200)
             assert request(BASE, body=payload, headers=headers) == replies[0]
             assert request(result, headers=request_headers("GET", result))[0] == 410
-            print("NGINX_TLS_BATCH_CALLBACK_RESTART_PASS")
+            print("NGINX_TLS_BATCH_CALLBACK_RESTART_VOLATILITY_PASS")
         except Exception:
             print(docker("logs", "--tail", "20", engine, check=False))
             print(docker("logs", "--tail", "20", nginx, check=False))

@@ -4,6 +4,8 @@ Prospector Service requiere Linux con soporte `pidfd`, PID namespace privado y u
 
 ## Dos contenedores
 
+La imagen y Compose solicitan el sandbox nativo de Chromium. El perfil seccomp adicional se evalúa solo en laboratorio y requiere aprobación para el host de destino. Un host sin soporte devolverá fallo de ejecución. [Convergencia y ensayo protegido](engine-convergence-v1.md)
+
 [compose.yaml](../compose.yaml) inicia Nginx y Service. Solo Nginx publica puerto. El upstream está en una red privada interna, con una red separada para egress de Service. Limite esa salida a los destinos autorizados por la instalación. El origen de callbacks debe ser HTTPS, configurado y confiable; puede usar una CA privada con `PLATFORM_CALLBACK_CA_FILE`. En el flujo normal el callback va directamente a Platform. El smoke añade un receptor fake detrás de Nginx exclusivamente durante la prueba.
 
 Provisione estas variables en un entorno de despliegue ajeno a Git. Proporcione rutas de archivos absolutos y asegure lectura para el UID 10001 de Service o 101 de Nginx según corresponda. Use cuatro secretos independientes de al menos 32 bytes. No copie los secretos al contexto de build.

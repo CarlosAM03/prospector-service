@@ -13,7 +13,7 @@ from .api import error_response, router
 from .config import Settings
 from .coordinator import Coordinator
 from .errors import ServiceError
-from .runner import ProcessRunner
+from .runner import ProcessRunner, memory_filesystem
 
 
 def create_app(
@@ -32,7 +32,7 @@ def create_app(
     async def lifespan(application):
         selected = runner or ProcessRunner(settings)
         previous_temp = tempfile.tempdir
-        if runner is None and selected.supported:
+        if memory_filesystem(settings.worker_temp_dir):
             # openpyxl uses worksheet staging files. Keep them on verified volatile storage.
             tempfile.tempdir = str(settings.worker_temp_dir.resolve())
         relay = CallbackRelay(settings, callback_transport)

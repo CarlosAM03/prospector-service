@@ -68,7 +68,12 @@ class ProcessRunner:
             for key in ("PATH", "LANG", "LC_ALL", "PLAYWRIGHT_BROWSERS_PATH", "PYTHONPATH")
             if key in os.environ
         }
-        env.update(HOME=str(directory), TMPDIR=str(directory), PYTHONDONTWRITEBYTECODE="1")
+        env.update(
+            HOME=str(directory),
+            TMPDIR=str(directory),
+            PYTHONDONTWRITEBYTECODE="1",
+            PROSPECTOR_CHROMIUM_SANDBOX=settings.prospector_chromium_sandbox,
+        )
         process = None
         clean = False
         try:

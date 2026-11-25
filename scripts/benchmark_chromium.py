@@ -26,6 +26,39 @@ BASE = "/api/v1/prospecting/batches"
 SCALES = (1, 2, 3, 5, 10, 15, 20, 25)
 
 
+def verify_lab_isolation():
+    import resource
+
+    status = dict(line.split(":", 1) for line in Path("/proc/self/status").read_text().splitlines())
+    assert os.getuid() == os.getgid() == 10001
+    assert status["Seccomp"].strip() == "2"
+    assert status["NoNewPrivs"].strip() == "1"
+    assert not int(status["CapEff"].strip(), 16)
+    assert {item.name for item in Path("/sys/class/net").iterdir()} == {"lo"}
+    assert resource.getrlimit(resource.RLIMIT_CORE) == (0, 0)
+    assert Path("/sys/fs/cgroup/memory.swap.max").read_text().strip() == "0"
+    mounts = [line.split() for line in Path("/proc/self/mountinfo").read_text().splitlines()]
+    assert any(row[4] == "/" and "ro" in row[5].split(",") for row in mounts)
+    assert any(
+        row[4] == "/tmp"
+        and row[row.index("-") + 1] == "tmpfs"
+        and {"nosuid", "nodev"} <= set(row[5].split(","))
+        for row in mounts
+    )
+
+
+def verify_browser_flags():
+    commands = []
+    for pid in descendants(os.getpid(), process_table()):
+        try:
+            command = Path("/proc", str(pid), "cmdline").read_bytes().split(b"\0")
+        except OSError:
+            continue
+        if b"--remote-debugging-pipe" in command and b"chrome" in command[0]:
+            commands.append(command)
+    assert commands and all(b"--no-sandbox" not in command for command in commands)
+
+
 def controlled_execute(batch, browser, headless, token, send):
     from prospector_engine import Business, SourceIdentityEvidence
     from prospector_engine.browser import BrowserRuntime
@@ -38,6 +71,8 @@ def controlled_execute(batch, browser, headless, token, send):
             page = runtime.new_page()
             page.set_content("<html><title>controlled benchmark</title></html>")
             assert page.title() == "controlled benchmark"
+            if os.environ["PROSPECTOR_CHROMIUM_SANDBOX"] == "1":
+                verify_browser_flags()
             time.sleep(0.35)
         return SimpleNamespace(
             query=request,
@@ -127,7 +162,7 @@ def process_sample(cpu_ticks):
     }
 
 
-async def wave(lanes, directory):
+async def wave(lanes, directory, *, protected):
     events = []
     acceptance = []
     cpu_ticks = {}
@@ -141,6 +176,8 @@ async def wave(lanes, directory):
     settings = Settings(
         app_env="test",
         metadata_path=directory / f"{lanes}.sqlite3",
+        worker_temp_dir=Path("/tmp" if protected else "/dev/shm"),
+        prospector_chromium_sandbox="1" if protected else "0",
         internal_api_key="a" * 32,
         assertion_key="b" * 32,
         metadata_key="c" * 32,
@@ -242,6 +279,7 @@ async def wave(lanes, directory):
     return {
         "lanes": lanes,
         "status": "PASS" if outcome else "FAIL",
+        "sandbox_requested": protected,
         "workload": "controlled Chromium acquisition, five queries, 150 synthetic rows per query",
         "accepted": codes.count(202),
         "completed_with_snapshots": len(success),
@@ -256,10 +294,16 @@ async def wave(lanes, directory):
         "cgroup_memory_limit": memory_limit,
         "worker_cleanup_unverified": unsafe,
         "wave_timeout": timed_out,
+        "terminal_error_codes": sorted(
+            {event["error"]["code"] for event in terminal if event.get("error")}
+        ),
     }
 
 
-async def benchmark(max_lanes):
+async def benchmark(max_lanes, *, protected):
+    if protected:
+        assert os.environ.get("PROSPECTOR_CHROMIUM_SANDBOX") == "1"
+        verify_lab_isolation()
     failed = False
     with tempfile.TemporaryDirectory(prefix="prospector-bench-", dir="/dev/shm") as path:
         for lanes in SCALES:
@@ -267,7 +311,7 @@ async def benchmark(max_lanes):
                 print(json.dumps({"lanes": lanes, "status": "NOT_RUN"}), flush=True)
                 continue
             try:
-                result = await wave(lanes, Path(path))
+                result = await wave(lanes, Path(path), protected=protected)
             except Exception as exc:
                 result = {"lanes": lanes, "status": "FAIL", "error_type": type(exc).__name__}
             print(json.dumps(result), flush=True)
@@ -283,4 +327,6 @@ if __name__ == "__main__":
     else:
         parser = argparse.ArgumentParser(description=__doc__)
         parser.add_argument("--max-lanes", type=int, choices=SCALES, default=1)
-        sys.exit(asyncio.run(benchmark(parser.parse_args().max_lanes)))
+        parser.add_argument("--protected", action="store_true")
+        options = parser.parse_args()
+        sys.exit(asyncio.run(benchmark(options.max_lanes, protected=options.protected)))

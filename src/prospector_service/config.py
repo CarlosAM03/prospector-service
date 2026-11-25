@@ -24,6 +24,7 @@ class Settings(BaseModel):
     metadata_path: Path = Path("data/prospector.sqlite3")
     engine_browser: Literal["msedge", "chromium"] = "chromium"
     engine_headless: bool = True
+    prospector_chromium_sandbox: Literal["0", "1"] = "0"
     worker_temp_dir: Path = Path("/dev/shm")
     max_request_bytes: int = Field(default=65536, ge=1024, le=65536)
     max_snapshot_bytes: int = Field(default=1048576, ge=1024, le=4194304)
@@ -41,6 +42,8 @@ class Settings(BaseModel):
     def validate_runtime(self):
         if self.app_env == "production" and self.allow_local_callbacks:
             raise ValueError("local callbacks are unavailable in production")
+        if self.prospector_chromium_sandbox == "1" and self.engine_browser != "chromium":
+            raise ValueError("the protected profile requires Playwright Chromium")
         keys = [
             key.get_secret_value()
             for key in (
@@ -102,6 +105,6 @@ class Settings(BaseModel):
                 raise ValueError("configure one credential source")
             if key_file:
                 value = Path(key_file).read_text(encoding="utf-8").rstrip("\r\n")
-            if value:
+            if value or (field == "prospector_chromium_sandbox" and value is not None):
                 values[field] = value
         return cls(**values)

@@ -1,6 +1,6 @@
 # Gates de Prospector Service v1.0.0
 
-**Estado** candidato en revisión. La rama de trabajo se basa en `98382eb501d61512b1409adf8855b662fd81b810`. El Engine fijado es `030a82d63a499a8abe65352d282ccc9bbc076ff3`, candidato con límite 150. La compatibilidad del consumidor y la preparación productiva requieren evidencia adicional.
+**Estado** candidato en revisión. Esta página conserva las mediciones históricas con Engine `030a82d63a499a8abe65352d282ccc9bbc076ff3`. La evidencia del pin endurecido, las pruebas protegidas y el escaneo de imagen se registran por separado en [Convergencia Service–Engine](engine-convergence-v1.md).
 
 | Gate | Evidencia y reproducción |
 | --- | --- |

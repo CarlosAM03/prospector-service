@@ -31,12 +31,16 @@ class FakeProcessRunner(ProcessRunner):
             str(self.settings.ipc_max_bytes),
             str(self.gate),
             self.mode,
+            self.settings.prospector_chromium_sandbox,
         )
 
 
 async def test_25_isolated_linux_workers(settings, tmp_path, monkeypatch):
     for name in ("INTERNAL_API_KEY", "CALLBACK_API_KEY", "ASSERTION_KEY", "METADATA_KEY"):
         monkeypatch.setenv(name, "env-must-not-reach-worker")
+        monkeypatch.setenv(f"{name}_FILE", "path-must-not-reach-worker")
+    monkeypatch.setenv("PROSPECTOR_CHROMIUM_SANDBOX", "0")
+    settings = settings.model_copy(update={"prospector_chromium_sandbox": "1"})
     gate = tmp_path / "start"
     runner = FakeProcessRunner(settings, gate)
     if not runner.supported:
@@ -97,3 +101,20 @@ async def test_worker_timeout_kills_detached_child(settings, tmp_path, monkeypat
         assert state["jobs"][0]["errorCode"] == "BATCH_TIMEOUT"
         assert [job["status"] for job in state["jobs"]] == ["INTERRUPTED", "SKIPPED"]
         assert not state["active"] and not coord.unsafe
+
+
+async def test_same_uid_can_access_fixture_credential_and_sqlite(settings, tmp_path):
+    gate = tmp_path / "released"
+    gate.touch()
+    fixture = tmp_path / "credential-fixture"
+    fixture.write_text("synthetic-read-probe")
+    fixture.chmod(0o400)
+    runner = FakeProcessRunner(settings, gate, "acl_probe")
+    if not runner.supported:
+        pytest.skip("host cannot verify Linux worker access")
+    payload = batch(count=1)
+    async with session(settings, runner) as (client, coord, _):
+        assert (await post(client, settings, payload)).status_code == 202
+        await until(lambda: not coord.lanes, timeout=20)
+        job = (await status(client, settings, payload)).json()["data"]["jobs"][0]
+        assert job["status"] == "COMPLETED"

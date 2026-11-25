@@ -34,6 +34,7 @@ def main():
         consumer.mkdir()
         code = """
 from pathlib import Path
+from importlib.metadata import metadata, version
 import sys
 import prospector_service, prospector_engine, prospector_export
 from fastapi.testclient import TestClient
@@ -45,6 +46,10 @@ from prospector_engine import ProspectorEngine, EngineConfig, SearchQuery, Sourc
 from openpyxl import load_workbook
 for package in (prospector_service, prospector_engine, prospector_export):
     assert Path(package.__file__).is_relative_to(Path(sys.prefix))
+assert version('playwright') == '1.65.2'
+assert version('soupsieve') == '4.1.3'
+assert any('68aca39b42a21ae8c0b54b6e6ca93840fdad27e5' in entry
+           for entry in metadata('prospector-service').get_all('Requires-Dist'))
 assert ProspectorEngine(EngineConfig()).config.limit == 50
 try:
     ProspectorEngine(EngineConfig(limit=151)).search(SearchQuery(Source.GOOGLE_MAPS, 'cafe', 'TJ'))

@@ -1,24 +1,21 @@
 """Run one sandbox-requested Chromium lane per verified lab profile, without network."""
 
 import argparse
-import base64
 import hashlib
 import json
 import shutil
 import subprocess
 import tempfile
 from pathlib import Path
-from urllib.request import urlopen
 from uuid import uuid4
 
-PROFILE_URL = "https://api.github.com/repos/microsoft/playwright/git/blobs/fddc05fb520affb145404e6f6f647ca96af8087d"
+PROFILE_PATH = Path(__file__).resolve().parent / "vendor" / "playwright" / "seccomp_profile.json"
 PROFILE_HASH = "cc3e61cabda6bbc1e53e54d27ba4d55a9d3be829b6dd1a596f4a7b31b1cc7849"
 ROOT = Path(__file__).resolve().parents[1]
 
 
 def profiles(directory):
-    with urlopen(PROFILE_URL, timeout=20) as response:
-        content = base64.b64decode(json.load(response)["content"])
+    content = PROFILE_PATH.read_bytes()
     if hashlib.sha256(content).hexdigest() != PROFILE_HASH:
         raise ValueError("Playwright seccomp profile hash mismatch")
     upstream = directory / "playwright-seccomp.json"

@@ -1,0 +1,5 @@
+# Apply only after the owner has accepted the profile for the target host.
+services:
+  service:
+    security_opt:
+      - "seccomp=${PROSPECTOR_SECCOMP_PROFILE:?set the approved seccomp profile path}"

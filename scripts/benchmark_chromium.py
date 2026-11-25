@@ -59,6 +59,23 @@ def verify_browser_flags():
     assert commands and all(b"--no-sandbox" not in command for command in commands)
 
 
+def probe_protected_browser():
+    from prospector_engine.browser import BrowserRuntime
+
+    baseline = descendants(os.getpid(), process_table())
+    with BrowserRuntime(headless=True, channel=None) as runtime:
+        page = runtime.new_page()
+        page.set_content("<title>protected browser probe</title>")
+        assert page.title() == "protected browser probe"
+        verify_browser_flags()
+    assert page.is_closed()
+    deadline = time.monotonic() + 3
+    while descendants(os.getpid(), process_table()) - baseline and time.monotonic() < deadline:
+        time.sleep(0.05)
+    assert not descendants(os.getpid(), process_table()) - baseline
+    print("PROTECTED_BROWSER_PROBE_PASS")
+
+
 def controlled_execute(batch, browser, headless, token, send):
     from prospector_engine import Business, SourceIdentityEvidence
     from prospector_engine.browser import BrowserRuntime
@@ -328,5 +345,12 @@ if __name__ == "__main__":
         parser = argparse.ArgumentParser(description=__doc__)
         parser.add_argument("--max-lanes", type=int, choices=SCALES, default=1)
         parser.add_argument("--protected", action="store_true")
+        parser.add_argument("--probe-only", action="store_true")
         options = parser.parse_args()
+        if options.probe_only:
+            if not options.protected or os.environ.get("PROSPECTOR_CHROMIUM_SANDBOX") != "1":
+                parser.error("the probe requires the protected profile")
+            verify_lab_isolation()
+            probe_protected_browser()
+            sys.exit(0)
         sys.exit(asyncio.run(benchmark(options.max_lanes, protected=options.protected)))

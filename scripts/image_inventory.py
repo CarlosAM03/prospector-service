@@ -18,7 +18,7 @@ def output(*command):
 
 def main():
     (shell,) = Path(os.environ["PLAYWRIGHT_BROWSERS_PATH"]).glob(
-        "chromium_headless_shell-*/chrome-linux*/chrome-headless-shell"
+        "chromium_headless_shell-*/*/chrome-headless-shell"
     )
     node = Path(playwright.__file__).parent / "driver" / "node"
     info = {

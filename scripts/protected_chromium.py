@@ -9,6 +9,7 @@ import subprocess
 import tempfile
 from pathlib import Path
 from urllib.request import urlopen
+from uuid import uuid4
 
 PROFILE_URL = "https://api.github.com/repos/microsoft/playwright/git/blobs/fddc05fb520affb145404e6f6f647ca96af8087d"
 PROFILE_HASH = "cc3e61cabda6bbc1e53e54d27ba4d55a9d3be829b6dd1a596f4a7b31b1cc7849"
@@ -34,10 +35,22 @@ def profiles(directory):
     )
     candidate = directory / "playwright-seccomp-chroot.json"
     candidate.write_text(json.dumps(profile), encoding="utf-8")
+    profile["syscalls"].append(
+        {
+            "names": ["pidfd_open", "pidfd_send_signal"],
+            "action": "SCMP_ACT_ALLOW",
+            "args": [],
+            "includes": {},
+            "excludes": {},
+        }
+    )
+    service = directory / "service-seccomp-lab.json"
+    service.write_text(json.dumps(profile), encoding="utf-8")
     return [
-        ("docker-default", None),
-        ("playwright-upstream", upstream),
-        ("playwright-chroot-lab", candidate),
+        ("docker-default", None, True),
+        ("playwright-upstream", upstream, False),
+        ("playwright-chroot-lab", candidate, False),
+        ("service-pidfd-lab", service, True),
     ]
 
 
@@ -60,11 +73,14 @@ def main():
     outcomes = []
     with tempfile.TemporaryDirectory(prefix="prospector-lab-") as scratch:
         directory = Path(scratch)
-        for name, profile in profiles(directory):
+        for name, profile, integrated in profiles(directory):
+            container = f"prospector-protected-{uuid4().hex[:12]}"
             command = [
                 "docker",
                 "run",
                 "--rm",
+                "--name",
+                container,
                 "--init",
                 "--network",
                 "none",
@@ -91,24 +107,39 @@ def main():
             ]
             if profile:
                 command += ["--security-opt", f"seccomp={profile}"]
-            result = subprocess.run(
-                [
-                    *command,
-                    args.image,
-                    "python",
-                    "-m",
-                    "scripts.benchmark_chromium",
-                    "--max-lanes",
-                    "1",
-                    "--protected",
-                ],
-                capture_output=True,
-                text=True,
-                timeout=270,
-            )
+            extra = ["--max-lanes", "1"] if integrated else ["--probe-only"]
+            try:
+                result = subprocess.run(
+                    [
+                        *command,
+                        args.image,
+                        "python",
+                        "-m",
+                        "scripts.benchmark_chromium",
+                        "--protected",
+                        *extra,
+                    ],
+                    capture_output=True,
+                    text=True,
+                    timeout=270,
+                )
+            except subprocess.TimeoutExpired:
+                subprocess.run(["docker", "rm", "-f", container], timeout=20, capture_output=True)
+                outcomes.append(
+                    {
+                        "profile": name,
+                        "scope": "service" if integrated else "engine",
+                        "status": "FAIL",
+                        "reason": "LAB_TIMEOUT",
+                        "stages": [],
+                    }
+                )
+                print(f"PROTECTED_PROFILE_TIMEOUT {name}", flush=True)
+                break
             rows = [json.loads(line) for line in result.stdout.splitlines() if line.startswith("{")]
             row = {
                 "profile": name,
+                "scope": "service" if integrated else "engine",
                 "status": "PASS" if result.returncode == 0 else "FAIL",
                 "exit": result.returncode,
                 "stages": rows,
@@ -130,7 +161,7 @@ def main():
         + "\n",
         encoding="utf-8",
     )
-    return int(not any(row["status"] == "PASS" for row in outcomes))
+    return int(not any(row["status"] == "PASS" and row["scope"] == "service" for row in outcomes))
 
 
 if __name__ == "__main__":

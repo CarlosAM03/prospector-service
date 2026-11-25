@@ -6,10 +6,11 @@ Base Service `1b73839af2262e2d5524b557749cdd9c2b909cbf`. Engine candidato `68aca
 
 | Componente | Candidato Service |
 | --- | --- |
-| Python y base | 3.11.18-slim-bookworm por digest en ambas etapas. Service requiere Python ≥3.11.5 para que el pin de Soup Sieve se aplique también al instalar el wheel. CI ejecuta 3.11.18 y 3.13. |
+| Python y base | 3.11.18-slim-bookworm por digest en ambas etapas. Service requiere Python ≥3.11.5 para que el pin de Soup Sieve se aplique también al instalar el wheel. CI usa 3.11.18 y 3.13 en Linux. Windows instala el parche publicado de la rama 3.11 y ejecuta también 3.13. El runner Windows carece de 3.11.18. |
 | Browser y driver | Playwright 1.65.2, Chromium 159.0.8154.6 y Node 26.13.1 según el suplemento. La imagen final instala el browser correspondiente y `libatomic1`. |
 | Parser | BeautifulSoup4 4.15.0 y Soup Sieve 4.1.3. `pyee` sale de constraints porque Playwright ya no la declara. |
-| Empaquetado | pip 26.3 en ambas etapas Docker. Setuptools 84.2.1 y wheel 0.48.0 fijados para build y retirados como distribuciones independientes del runtime. `pip check` después de instalar. El resto de pins de Service se conserva. |
+| Empaquetado | pip 26.3 en ambas etapas Docker. Setuptools 84.2.1 y wheel 0.48.0 fijados para build y retirados como distribuciones independientes del runtime. `pip check` después de instalar. |
+| Correcciones del escaneo integrado | dnspython 2.9.2 por CVE-2026-128089 y opentelemetry-api 1.45.2 por CVE-2026-126360. No se cambian otros pins de aplicación. |
 
 CI verifica el SHA VCS de la instalación de Engine en integración. El smoke offline comprueba el requisito VCS declarado por el wheel de Service y las versiones de Playwright y Soup Sieve instaladas. El inventario del contenedor registra el ID de imagen, CPython, driver, navegador, `libatomic1`, paquetes Debian y distribuciones Python efectivas. El requisito de origen del wheel y la comprobación de una instalación VCS son dos evidencias distintas.
 
@@ -29,6 +30,17 @@ El job Docker escanea la imagen final de Service con el binario oficial verifica
 - CPython 3.11.18 incorpora la corrección del parser HTML que motivó retirar 3.11.14. Setuptools y wheel corregidos se usan para construcción e instalación. Los componentes que pip vendoriza requieren evaluación por ruta de uso y versión, incluso si las distribuciones independientes están ausentes. [Notas de CPython](https://www.python.org/downloads/release/python-31118/)
 - Los componentes Debian que usa Chromium siguen dentro del alcance de revisión de imagen. Un aviso en un servidor que Service no inicia tiene otra exposición que un aviso en biblioteca cliente, TLS o parser. No se suprimen por esa diferencia.
 
+El primer escaneo completo, en `bf4a4dff006f068182b1f8897381760569dbaaf1`, catalogó 260 componentes. Registró 624 asociaciones de vulnerabilidad, con 4 críticas, 149 altas, 258 medias, 187 bajas y 26 sin severidad conocida, y 0 matches de secretos. Las cinco asociaciones Python se dividieron en las dos dependencias parcheadas y tres entradas atribuidas a setuptools 70.3.0. El inventario negó que hubiera una distribución independiente de setuptools en el runtime y el escáner también inspecciona metadatos vendorizados. Las rutas de empaquetado, instalación y `PackageIndex` requieren revisión antes de cerrar esos avisos. Service no usa esas rutas en su API.
+
+| Asociación crítica de Trivy | Aplicabilidad en Service |
+| --- | --- |
+| GLib `2.74.6-2+deb12u9`, CVE-2026-58016 | Debian aplaza el parche de Bookworm. Afecta introspección D-Bus. La API de Service no ofrece esa operación. Queda por descartar exposición indirecta del navegador y sus bibliotecas. [Debian](https://security-tracker.debian.org/tracker/CVE-2026-58016) |
+| SQLite `3.40.1-2+deb12u2`, CVE-2025-7458 | Service usa SQLite. Las rutas HTTP usan sentencias fijas y parámetros, sin entrada SQL arbitraria. El UID compartido y el volumen siguen requiriendo control. Bookworm sigue vulnerable según Debian. [Debian](https://security-tracker.debian.org/tracker/CVE-2025-7458) |
+| libxml2 `2.9.14+dfsg-1.3~deb12u6`, CVE-2026-6653 | Debian aplaza el arreglo en Bookworm. BeautifulSoup usa `html.parser` y Service genera XLSX; queda por revisar la ruta nativa indirecta de XML de la imagen con el perfil de destino. [Debian](https://security-tracker.debian.org/tracker/CVE-2026-6653) |
+| zlib `1:1.2.13.dfsg-1`, CVE-2023-45853 | Atribución al paquete fuente. Debian indica que Bookworm no compiló el contrib MiniZip vulnerable en zlib. El export usa `zipfile` de Python. Conservar el hallazgo bruto y la evaluación de distribución. [Debian](https://security-tracker.debian.org/tracker/CVE-2023-45853) |
+
+El parche de dnspython se incorpora aunque Service valide email sin consultas de entregabilidad. Se actualiza OpenTelemetry API como transitiva instalada, con la corrección de la expresión regular indicada por el escáner. El inventario exige las versiones de reemplazo para comprobar que los cambios llegaron a la imagen. [dnspython 2.9.2](https://pypi.org/project/dnspython/2.9.2/) · [OpenTelemetry API 1.45.2](https://pypi.org/project/opentelemetry-api/1.45.2/)
+
 ## Riesgo residual de UID compartido
 
 El filtro de entorno reduce exposición accidental al ejecutar el hijo. Compartir UID 10001 y montaje permite al hijo abrir archivos de credenciales legibles por ese UID y acceder al SQLite/WAL. La prueba Linux usa una credencial sintética modo 0400 y confirma acceso de lectura y escritura a la ruta SQLite por el mismo UID. Nunca usa claves de una instalación. La raíz de solo lectura no protege el volumen SQLite escrito por el coordinador. Los archivos de secretos, el proceso padre y el volumen siguen sin ser una frontera frente a código comprometido que opere con ese UID.
@@ -47,3 +59,5 @@ El smoke TLS prueba SQLite y WAL bajo un volumen persistente, ausencia de sentin
 ## Evidencia de ejecución
 
 Service utiliza los nueve jobs existentes. El job Docker agrega inventario, escaneo y el ensayo protegido separado del smoke de red de Platform fake. El volumen Windows local tenía menos de 1 GiB libre al iniciar la convergencia, por lo que no se construyó otra imagen ni se repitió carga allí. Gate D anterior permanece como evidencia histórica. [Perfil anterior con Engine 030a82d](chromium-controlled-v1.json)
+
+En la corrida 12, el smoke Nginx/TLS pasó con las comprobaciones de volatilidad. El perfil Docker por defecto admitió el batch protegido, interrumpió Engine y no produjo snapshots ni dejó descendientes. El perfil upstream sin la excepción falló en `chroot` durante el arranque de Chromium. El diagnóstico directo del perfil de Engine con `chroot` pasó. El perfil integrado con `chroot` y pidfd completó 1 batch y 5 snapshots de hasta 150 filas sintéticas, en 5,471 s, con pico de 232.165.376 bytes de memoria cgroup, un Chromium principal y cero descendientes al cerrar. Escalones 2, 3, 5, 10, 15, 20 y 25 del candidato protegido quedaron NOT_RUN. Los fixtures bloquearon la red. [Job Docker de la corrida 12](https://github.com/CarlosAM03/prospector-service/actions/runs/45544166685/job/138969626814) · [SBOM, escaneo e inventario de la corrida 12](https://github.com/CarlosAM03/prospector-service/actions/runs/45544166685/artifacts/14991225688)

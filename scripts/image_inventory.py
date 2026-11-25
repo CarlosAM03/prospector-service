@@ -3,7 +3,9 @@
 import json
 import os
 import platform
+import sqlite3
 import subprocess
+import zlib
 from importlib.metadata import PackageNotFoundError, distributions, metadata, version
 from pathlib import Path
 
@@ -31,6 +33,10 @@ def main():
         "chromium": output(str(shell), "--version"),
         "driver_node": output(str(node), "--version"),
         "libatomic1": output("dpkg-query", "-W", "-f=${Version}", "libatomic1"),
+        "sqlite_runtime": sqlite3.sqlite_version,
+        "zlib_runtime": zlib.ZLIB_RUNTIME_VERSION,
+        "dnspython": version("dnspython"),
+        "opentelemetry_api": version("opentelemetry-api"),
         "debian": output("dpkg-query", "-W", "-f=${Package}= ${Version}\\n").splitlines(),
         "python_distributions": sorted(
             f"{item.metadata['Name']}=={item.version}" for item in distributions()
@@ -40,6 +46,8 @@ def main():
     assert info["pip"] == "26.3"
     assert info["playwright"] == "1.65.2"
     assert info["soupsieve"] == "4.1.3"
+    assert info["dnspython"] == "2.9.2"
+    assert info["opentelemetry_api"] == "1.45.2"
     assert "159.0.8154.6" in info["chromium"]
     assert info["driver_node"] == "v26.13.1"
     assert any(PIN in item for item in metadata("prospector-service").get_all("Requires-Dist"))

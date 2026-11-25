@@ -30,6 +30,7 @@ report = json.loads((output / "vulnerabilities.json").read_text())
 total = collections.Counter()
 affected = collections.Counter()
 high_packages = collections.Counter()
+triage = []
 for result in report.get("Results") or []:
     for item in result.get("Vulnerabilities") or []:
         severity = item["Severity"]
@@ -37,6 +38,17 @@ for result in report.get("Results") or []:
         affected[result["Type"]] += 1
         if severity in {"HIGH", "CRITICAL"}:
             high_packages[(result["Type"], item["PkgName"], severity)] += 1
+        if severity == "CRITICAL" or result["Type"] == "python-pkg":
+            triage.append({
+                "source": result["Type"],
+                "target": result["Target"],
+                "id": item["VulnerabilityID"],
+                "package": item["PkgName"],
+                "installed": item["InstalledVersion"],
+                "fixed": item.get("FixedVersion"),
+                "status": item.get("Status"),
+                "severity": severity,
+            })
 secret_report = json.loads(Path(sys.argv[2]).read_text())
 secret_matches = sum(len(row.get("Secrets") or []) for row in secret_report.get("Results") or [])
 sbom = json.loads((output / "sbom.cdx.json").read_text())
@@ -52,6 +64,7 @@ summary = {
         for (ecosystem, name, severity), count in sorted(high_packages.items())
     ],
     "secret_matches": secret_matches,
+    "critical_and_python": triage,
 }
 text = json.dumps(summary, indent=2) + "\n"
 (output / "scan-summary.json").write_text(text)

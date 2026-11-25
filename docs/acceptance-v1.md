@@ -22,6 +22,10 @@ Los resultados de GitHub Actions deben corresponder al SHA de la rama revisada. 
 
 La repetición corta con el contador corregido observó picos de 1, 2 y 3 navegadores principales en sus escalones respectivos, sin descendientes tras cleanup. También pasaron nueve pruebas locales adicionales de IPC, timeout cooperativo/forzado con un proceso separado de su grupo, recuperación, callbacks y contrato. `docker compose config --quiet` validó la sintaxis de la topología con valores de prueba.
 
+La corrida 9 de Service CI pasó completa en `3979f16a1e5b29902efcc22318ab32bff2a422cd`, incluido el smoke Nginx corregido, Python 3.11/3.13 en Linux y Windows, build e instalación del paquete. Una repetición local posterior de Pytest en Windows quedó bloqueada por falta de espacio en el volumen temporal. [Service CI, corrida 9](https://github.com/CarlosAM03/prospector-service/actions/runs/45539590134)
+
+En un segundo perfil de 8 CPU y 5 GiB, los escalones 1/2/3/5/10 completaron todos los jobs. Con 10 batches se observaron 9 navegadores principales simultáneos, 50 snapshots en 26,847 s, 2,04 GB de pico cgroup y cero descendientes tras cleanup. Durante el escalón 15, Docker Desktop respondió HTTP 500 a la consulta de estado y luego informó que estaba detenido. Ese escalón quedó inconcluso. No se estableció la causa del paro ni hay mediciones de 20/25. [Dos perfiles y mediciones](chromium-controlled-v1.json)
+
 ## Diferencias respecto al baseline
 
 Se retiró POST individual y se añadió OpenAPI batch propio, sin editar el contrato histórico. SQLite conserva solo los recibos y estados administrativos. Los procesos Engine, callbacks asíncronos, snapshots volátiles, autorización por operación y Nginx sustituyen el flujo inicial de hilo y cola únicos. El adaptador de Platform sigue fuera de este repo.

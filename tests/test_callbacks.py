@@ -1,7 +1,10 @@
 import asyncio
 import json
+import threading
 
 import httpx
+
+from prospector_service import coordinator as application
 
 from .conftest import FakeRunner, batch, job_request, post, session, status, until
 
@@ -96,3 +99,37 @@ async def test_prefix_ack_purge_and_restart(settings):
         assert (
             await job_request(client, settings, payload, "ack", "POST", actor="platform")
         ).json() == first.json()
+
+
+async def test_inflight_export_survives_purge_and_new_reads_fail(settings, monkeypatch):
+    started, release = threading.Event(), threading.Event()
+    render = application.export_results
+
+    def delayed(*args, **kwargs):
+        started.set()
+        if not release.wait(5):
+            raise TimeoutError
+        return render(*args, **kwargs)
+
+    monkeypatch.setattr(application, "export_results", delayed)
+    settings = settings.model_copy(update={"export_concurrency": 1})
+    payload = batch(count=1)
+    async with session(settings) as (client, coord, _):
+        assert (await post(client, settings, payload)).status_code == 202
+        await until(lambda: not coord.lanes)
+        in_flight = asyncio.create_task(job_request(client, settings, payload, "export?format=csv"))
+        try:
+            await until(started.is_set)
+            assert (
+                await job_request(client, settings, payload, "export?format=csv")
+            ).status_code == 503
+            assert (
+                await job_request(client, settings, payload, "purge", "POST")
+            ).status_code == 200
+            assert (await job_request(client, settings, payload, "results")).status_code == 410
+        finally:
+            release.set()
+        exported = await in_flight
+        assert exported.status_code == 200
+        assert b"PRIVATE_RESULT_FIXTURE" in exported.content
+        assert coord.snapshots.total == 0

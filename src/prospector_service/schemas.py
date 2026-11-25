@@ -15,12 +15,6 @@ from pydantic import (
 )
 
 Cuid = Annotated[StrictStr, Field(pattern=r"^c[a-z0-9]{20,}$", max_length=128)]
-JobStatus = Literal[
-    "QUEUED", "RUNNING", "AWAITING_RESULTS", "COMPLETED", "FAILED", "INTERRUPTED", "SKIPPED"
-]
-Quality = Literal["SUCCESS", "SUCCESS_WITH_ISSUES", "PARTIAL"]
-Availability = Literal["AVAILABLE", "EXPIRED", "PURGED", "UNAVAILABLE"]
-Kind = Literal["STATE_CHANGED", "PROGRESS", "TERMINAL", "RESULT_AVAILABILITY_CHANGED"]
 
 
 def utc_now() -> datetime:

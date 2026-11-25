@@ -244,5 +244,161 @@
         "wave_timeout": false
       }
     ]
+  },
+  "second_profile": {
+    "service_commit": "3979f16a1e5b29902efcc22318ab32bff2a422cd",
+    "container": "Docker Desktop Linux, 8 CPUs, 5 GiB RAM, swap disabled, 1024 PIDs, 16384 FD, 1 GiB shm, network none",
+    "command": "python -m scripts.benchmark_chromium --max-lanes 25",
+    "stages": [
+      {
+        "lanes": 1,
+        "status": "PASS",
+        "workload": "controlled Chromium acquisition, five queries, 150 synthetic rows per query",
+        "accepted": 1,
+        "completed_with_snapshots": 5,
+        "duration_seconds": 10.869,
+        "sampled_cpu_seconds": 11.51,
+        "sampled_mean_cpu_cores": 1.059,
+        "ack_ms_median": 25.77,
+        "ack_ms_max": 25.77,
+        "progress_lag_ms_max": 6.051,
+        "peak_sample": {
+          "descendant_pids": 16,
+          "browser_main_pids": 1,
+          "fds": 195,
+          "rss_kib": 617796,
+          "pss_kib": 390957,
+          "shm_bytes": 1916928,
+          "shm_capacity_bytes": 1073741824,
+          "cgroup_memory_bytes": 258834432
+        },
+        "descendant_pids_after": 0,
+        "cgroup_memory_limit": "5368709120",
+        "worker_cleanup_unverified": false,
+        "wave_timeout": false
+      },
+      {
+        "lanes": 2,
+        "status": "PASS",
+        "workload": "controlled Chromium acquisition, five queries, 150 synthetic rows per query",
+        "accepted": 2,
+        "completed_with_snapshots": 10,
+        "duration_seconds": 10.001,
+        "sampled_cpu_seconds": 20.54,
+        "sampled_mean_cpu_cores": 2.054,
+        "ack_ms_median": 7.541,
+        "ack_ms_max": 11.246,
+        "progress_lag_ms_max": 6.991,
+        "peak_sample": {
+          "descendant_pids": 32,
+          "browser_main_pids": 2,
+          "fds": 379,
+          "rss_kib": 1180904,
+          "pss_kib": 584228,
+          "shm_bytes": 3772416,
+          "shm_capacity_bytes": 1073741824,
+          "cgroup_memory_bytes": 462848000
+        },
+        "descendant_pids_after": 0,
+        "cgroup_memory_limit": "5368709120",
+        "worker_cleanup_unverified": false,
+        "wave_timeout": false
+      },
+      {
+        "lanes": 3,
+        "status": "PASS",
+        "workload": "controlled Chromium acquisition, five queries, 150 synthetic rows per query",
+        "accepted": 3,
+        "completed_with_snapshots": 15,
+        "duration_seconds": 10.267,
+        "sampled_cpu_seconds": 30.96,
+        "sampled_mean_cpu_cores": 3.015,
+        "ack_ms_median": 4.305,
+        "ack_ms_max": 10.494,
+        "progress_lag_ms_max": 7.286,
+        "peak_sample": {
+          "descendant_pids": 48,
+          "browser_main_pids": 3,
+          "fds": 563,
+          "rss_kib": 1743144,
+          "pss_kib": 773639,
+          "shm_bytes": 5627904,
+          "shm_capacity_bytes": 1073741824,
+          "cgroup_memory_bytes": 652652544
+        },
+        "descendant_pids_after": 0,
+        "cgroup_memory_limit": "5368709120",
+        "worker_cleanup_unverified": false,
+        "wave_timeout": false
+      },
+      {
+        "lanes": 5,
+        "status": "PASS",
+        "workload": "controlled Chromium acquisition, five queries, 150 synthetic rows per query",
+        "accepted": 5,
+        "completed_with_snapshots": 25,
+        "duration_seconds": 13.887,
+        "sampled_cpu_seconds": 69.84,
+        "sampled_mean_cpu_cores": 5.029,
+        "ack_ms_median": 4.866,
+        "ack_ms_max": 14.08,
+        "progress_lag_ms_max": 13.299,
+        "peak_sample": {
+          "descendant_pids": 79,
+          "browser_main_pids": 5,
+          "fds": 939,
+          "rss_kib": 2873508,
+          "pss_kib": 1156498,
+          "shm_bytes": 11276288,
+          "shm_capacity_bytes": 1073741824,
+          "cgroup_memory_bytes": 1057529856
+        },
+        "descendant_pids_after": 0,
+        "cgroup_memory_limit": "5368709120",
+        "worker_cleanup_unverified": false,
+        "wave_timeout": false
+      },
+      {
+        "lanes": 10,
+        "status": "PASS",
+        "workload": "controlled Chromium acquisition, five queries, 150 synthetic rows per query",
+        "accepted": 10,
+        "completed_with_snapshots": 50,
+        "duration_seconds": 26.847,
+        "sampled_cpu_seconds": 195.06,
+        "sampled_mean_cpu_cores": 7.266,
+        "ack_ms_median": 4.342,
+        "ack_ms_max": 20.658,
+        "progress_lag_ms_max": 92.115,
+        "peak_sample": {
+          "descendant_pids": 149,
+          "browser_main_pids": 9,
+          "fds": 1695,
+          "rss_kib": 5245684,
+          "pss_kib": 2018762,
+          "shm_bytes": 24621056,
+          "shm_capacity_bytes": 1073741824,
+          "cgroup_memory_bytes": 2037342208
+        },
+        "descendant_pids_after": 0,
+        "cgroup_memory_limit": "5368709120",
+        "worker_cleanup_unverified": false,
+        "wave_timeout": false
+      },
+      {
+        "lanes": 15,
+        "status": "INCOMPLETE",
+        "reason": "Docker Desktop API returned HTTP 500 then reported stopped; no wave result was received."
+      },
+      {
+        "lanes": 20,
+        "status": "NOT_RUN"
+      },
+      {
+        "lanes": 25,
+        "status": "NOT_RUN"
+      }
+    ],
+    "host_observation": "Windows C: reported 210219008 free bytes. The cause of Docker Desktop stopping was not established. The attached CLI was stopped after Docker Desktop reported stopped."
   }
 }

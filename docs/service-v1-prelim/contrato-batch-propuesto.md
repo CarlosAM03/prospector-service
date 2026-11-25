@@ -1,3 +1,5 @@
+> **Histórico.** Las [decisiones ratificadas del 24 de noviembre](decisiones-v1.md) prevalecen sobre esta propuesta preliminar.
+
 # Contrato HTTP batch · Propuesta para revisión
 
 Estado **propuesto**. El [YAML vigente](../contracts/prospector-service-api.v1.yaml) sigue siendo la autoridad para el flujo individual. El delta contractual se prepara con el dueño del contrato tras la aprobación de las [ADR C1–C6](auditoria-y-adr.md).

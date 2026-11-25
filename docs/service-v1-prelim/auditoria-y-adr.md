@@ -1,3 +1,5 @@
+> **Histórico.** Las [decisiones ratificadas del 24 de noviembre](decisiones-v1.md) prevalecen sobre esta propuesta preliminar.
+
 # Auditoría de Prospector Service v1.0.0 y ADR C1–C6
 
 **Auditoría** 2026-11-23. **Cierre documental** 2026-11-24 (America/Tijuana). El propietario ratificó el alcance 5×5×5. Los mecanismos concretos de C1–C6 siguen propuestos. [Índice del cierre preliminar](README.md)

@@ -98,11 +98,7 @@ def process_sample(cpu_ticks):
         path = Path("/proc", str(pid))
         try:
             args = (path / "cmdline").read_bytes().split(b"\0")
-            if (
-                args
-                and b"chrome" in args[0]
-                and not any(arg.startswith(b"--type=") for arg in args)
-            ):
+            if args and b"chrome" in args[0] and b"--remote-debugging-pipe" in args:
                 browsers += 1
             stat = (path / "stat").read_text().rsplit(")", 1)[1].split()
             cpu_ticks[(pid, stat[19])] = int(stat[11]) + int(stat[12])
@@ -194,6 +190,7 @@ async def wave(lanes, directory):
 
     began = time.monotonic()
     monitor_task = asyncio.create_task(monitor())
+    timed_out = False
     try:
         async with application.router.lifespan_context(application):
             coord = application.state.coordinator
@@ -201,9 +198,12 @@ async def wave(lanes, directory):
                 transport=httpx.ASGITransport(app=application), base_url="http://benchmark"
             ) as client:
                 codes = await asyncio.gather(*(submit(client, i + 1) for i in range(lanes)))
-                async with asyncio.timeout(180):
-                    while coord.lanes or coord.relay.tasks:
-                        await asyncio.sleep(0.05)
+                try:
+                    async with asyncio.timeout(180):
+                        while coord.lanes or coord.relay.tasks:
+                            await asyncio.sleep(0.05)
+                except TimeoutError:
+                    timed_out = True
             terminal = [event for event, _ in events if event["kind"] == "TERMINAL"]
             success = [
                 event
@@ -229,7 +229,8 @@ async def wave(lanes, directory):
     )
     shm_ok = peaks.get("shm_bytes", 0) < 0.75 * peaks.get("shm_capacity_bytes", 1)
     outcome = (
-        codes == [202] * lanes
+        not timed_out
+        and codes == [202] * lanes
         and len(success) == lanes * 5
         and bool(lag)
         and not unsafe
@@ -254,6 +255,7 @@ async def wave(lanes, directory):
         "descendant_pids_after": cleanup["descendant_pids"],
         "cgroup_memory_limit": memory_limit,
         "worker_cleanup_unverified": unsafe,
+        "wave_timeout": timed_out,
     }
 
 

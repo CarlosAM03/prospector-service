@@ -16,3 +16,12 @@ Platform autentica, autoriza membresía y firma para cada operación. OWNER y AD
 La recuperación conserva los recibos y estados administrativos. Un reinicio interrumpe lo que pudo empezar y omite lo pendiente; los resultados perdidos pasan a UNAVAILABLE. Si los procesos anteriores no pueden declararse limpios, no se reabre el plano de ejecución hasta verificar el entorno. Toda evidencia de progreso sigue siendo distinta de una prueba de resultados materializados.
 
 Los detalles de interoperabilidad definidos en el [contrato](../contracts/batch-api.v1.md) son elecciones técnicas para revisión. Cambios de política de autorización, de durabilidad comercial, de capacidad o de topología requieren aprobación del propietario.
+
+## Referencias de implementación
+
+- C1 · [API](../../src/prospector_service/api.py) y [aserción firmada](../../src/prospector_service/auth.py) · [contrato](../../tests/test_contract.py) y [seguridad](../../tests/test_api.py).
+- C2 · [SQLite](../../src/prospector_service/metadata.py) · [admisión concurrente](../../tests/test_jobs.py) y [recovery](../../tests/test_metadata.py).
+- C3 · [Supervisor](../../src/prospector_service/runner.py) y [worker](../../src/prospector_service/worker.py) · [procesos fake Linux](../../tests/test_runner.py).
+- C4 · [Adapter Engine](../../src/prospector_service/adapters/engine.py) y [relay](../../src/prospector_service/adapters/callbacks.py) · [eventos](../../tests/test_callbacks.py).
+- C5 · [Snapshots](../../src/prospector_service/snapshots.py) y [coordinador](../../src/prospector_service/coordinator.py) · [exportación](../../tests/test_export_integration.py).
+- C6 · [Compose](../../compose.yaml) y [Nginx](../../deploy/nginx/nginx.conf) · [smoke TLS](../../scripts/nginx_smoke.py).

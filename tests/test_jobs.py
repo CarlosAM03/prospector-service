@@ -99,3 +99,15 @@ async def test_snapshot_budget_does_not_evict_retained_snapshot(settings):
         state = (await status(client, configured, payload)).json()["data"]
         assert state["jobs"][0]["availability"] == "EXPIRED"
         assert coord.snapshots.total == 0
+
+
+async def test_invalid_result_is_local_to_the_job(settings):
+    runner = FakeRunner(rows=[{"name": "fixture", "source": "google_maps"}] * 2)
+    async with session(settings, runner) as (client, coord, _):
+        payload = batch(count=1, limit=1)
+        assert (await post(client, settings, payload)).status_code == 202
+        await until(lambda: not coord.lanes)
+        job = (await status(client, settings, payload)).json()["data"]["jobs"][0]
+        assert job["status"] == "FAILED" and job["errorCode"] == "RESULT_MAPPING_FAILED"
+        assert (await client.get("/health/ready")).status_code == 200
+        assert (await post(client, settings, batch(2, count=1, limit=2))).status_code == 202

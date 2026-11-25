@@ -97,6 +97,7 @@ class ProcessRunner:
     async def _coordinate(self, process, batch, notify, stop):
         result = None
         error = "ENGINE_EXIT"
+        reason = None
         cleanup = False
         started = asyncio.Event()
 
@@ -162,7 +163,7 @@ class ProcessRunner:
                 )
                 if receiver in done:
                     return Execution(result, error, receiver.result())
-            error = (
+            reason = (
                 "SERVICE_DRAINING"
                 if stop.is_set()
                 else ("BATCH_TIMEOUT" if started.is_set() else "WORKER_START_FAILED")
@@ -176,9 +177,9 @@ class ProcessRunner:
                 pass
             done, _ = await asyncio.wait({receiver}, timeout=max(0, deadline - loop.time()))
             if done and receiver.result():
-                return Execution(result, error, True)
+                return Execution(result, reason, True)
         except (ValueError, TimeoutError, OSError, KeyError):
-            error = "WORKER_PROTOCOL"
+            reason = reason or "WORKER_PROTOCOL"
         finally:
             for task in (start, stopping):
                 task.cancel()
@@ -196,4 +197,4 @@ class ProcessRunner:
                         pass
             else:
                 verified = False
-        return Execution(result, error, verified)
+        return Execution(result, reason or error, verified)

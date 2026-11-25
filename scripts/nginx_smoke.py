@@ -7,6 +7,7 @@ import hashlib
 import hmac
 import json
 import os
+import socket
 import ssl
 import subprocess
 import tempfile
@@ -71,7 +72,9 @@ def main():
         temp = Path(scratch)
         cert, key, acl = temp / "tls.crt", temp / "tls.key", temp / "allow.conf"
         acl.write_text("allow all;\n")
-        subprocess.run(
+        openssl_config = temp / "openssl.cnf"
+        openssl_config.write_text("[req]\nprompt=no\ndistinguished_name=dn\n[dn]\nCN=localhost\n")
+        generated = subprocess.run(
             [
                 os.getenv("OPENSSL_BIN", "openssl"),
                 "req",
@@ -81,8 +84,8 @@ def main():
                 "-nodes",
                 "-days",
                 "1",
-                "-subj",
-                "/CN=localhost",
+                "-config",
+                str(openssl_config),
                 "-addext",
                 "subjectAltName=DNS:localhost,DNS:nginx",
                 "-keyout",
@@ -90,9 +93,11 @@ def main():
                 "-out",
                 str(cert),
             ],
-            check=True,
             capture_output=True,
+            text=True,
         )
+        if generated.returncode:
+            raise RuntimeError(generated.stderr.strip())
         for path in (cert, key, acl):
             path.chmod(0o644)
         context = ssl.create_default_context(cafile=str(cert))
@@ -242,6 +247,23 @@ def main():
             assert request(BASE, body=payload, headers=headers) == replies[0]
             result = f"{BASE}/{bid}/jobs/{jid}/results"
             assert request(result, headers=request_headers("GET", result))[0] == 200
+            # A truncated upload must neither become an admission nor be retried by Nginx.
+            incomplete_id = "c" + "9" * 24
+            incomplete = payload.replace(bid.encode(), incomplete_id.encode()).replace(
+                jid.encode(), ("c" + "8" * 24).encode()
+            )
+            incomplete_headers = request_headers("POST", BASE, incomplete, incomplete_id)
+            wire = (
+                f"POST {BASE} HTTP/1.1\r\nHost: localhost\r\nContent-Length: {len(incomplete)}\r\n"
+            )
+            wire += "".join(f"{name}: {value}\r\n" for name, value in incomplete_headers.items())
+            with socket.create_connection(("127.0.0.1", int(port)), timeout=5) as connection:
+                with context.wrap_socket(connection, server_hostname="localhost") as secure:
+                    secure.sendall(wire.encode() + b"\r\n" + incomplete[: len(incomplete) // 2])
+            assert request(BASE, body=incomplete, headers=incomplete_headers)[0] == 202
+            await_state(
+                lambda: len([event for event in events() if event["kind"] == "TERMINAL"]) == 26
+            )
             scanner = (
                 "from pathlib import Path; paths=Path('/var/lib/prospector').glob('*.sqlite3*'); "
                 "assert all(b'SYNTHETIC_' not in p.read_bytes() for p in paths)"

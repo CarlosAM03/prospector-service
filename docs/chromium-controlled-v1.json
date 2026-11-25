@@ -1,0 +1,248 @@
+{
+  "date": "2026-11-24",
+  "timezone": "America/Tijuana",
+  "service_commit": "316e1ede6217cee4b85287c2ea6a12175753d5b8",
+  "engine_pin": "030a82d63a499a8abe65352d282ccc9bbc076ff3",
+  "container": "Docker Desktop Linux, 4 CPUs, 4 GiB RAM, swap disabled, 1024 PIDs, 16384 FD, 1 GiB shm, network none",
+  "image_config": "sha256:7e56c3ab193eb888a53edc79b26a05fef731103db85d4ffda9ac5129e9a41bfb",
+  "command": "python -m scripts.benchmark_chromium --max-lanes 25",
+  "observations": [
+    "Read-only Service source bind mounted. Engine and Chromium installed in the candidate image.",
+    "ASGI loopback fake Platform and SQLite on tmpfs. Observed latencies are not production estimates.",
+    "The original Chrome counters include auxiliary processes and are not browser concurrency counts.",
+    "Stage 15 did not finish within the 180-second fixture deadline; the initial harness did not retain resource samples for timed-out stages."
+  ],
+  "stages": [
+    {
+      "lanes": 1,
+      "status": "PASS",
+      "workload": "controlled Chromium acquisition, five queries, 150 synthetic rows per query",
+      "accepted": 1,
+      "completed_with_snapshots": 5,
+      "duration_seconds": 14.268,
+      "sampled_cpu_seconds": 16,
+      "sampled_mean_cpu_cores": 1.121,
+      "ack_ms_median": 29.315,
+      "ack_ms_max": 29.315,
+      "progress_lag_ms_max": 7.17,
+      "peak_sample": {
+        "descendant_pids": 17,
+        "fds": 198,
+        "rss_kib": 624524,
+        "pss_kib": 391207,
+        "shm_bytes": 3002368,
+        "shm_capacity_bytes": 1073741824,
+        "cgroup_memory_bytes": 477843456,
+        "chrome_related_without_type": 6
+      },
+      "descendant_pids_after": 0,
+      "cgroup_memory_limit": "4294967296",
+      "worker_cleanup_unverified": false
+    },
+    {
+      "lanes": 2,
+      "status": "PASS",
+      "workload": "controlled Chromium acquisition, five queries, 150 synthetic rows per query",
+      "accepted": 2,
+      "completed_with_snapshots": 10,
+      "duration_seconds": 12.701,
+      "sampled_cpu_seconds": 27.49,
+      "sampled_mean_cpu_cores": 2.164,
+      "ack_ms_median": 6.681,
+      "ack_ms_max": 10.413,
+      "progress_lag_ms_max": 8.775,
+      "peak_sample": {
+        "descendant_pids": 31,
+        "fds": 379,
+        "rss_kib": 1189072,
+        "pss_kib": 583532,
+        "shm_bytes": 3747840,
+        "shm_capacity_bytes": 1073741824,
+        "cgroup_memory_bytes": 682721280,
+        "chrome_related_without_type": 12
+      },
+      "descendant_pids_after": 0,
+      "cgroup_memory_limit": "4294967296",
+      "worker_cleanup_unverified": false
+    },
+    {
+      "lanes": 3,
+      "status": "PASS",
+      "workload": "controlled Chromium acquisition, five queries, 150 synthetic rows per query",
+      "accepted": 3,
+      "completed_with_snapshots": 15,
+      "duration_seconds": 14.166,
+      "sampled_cpu_seconds": 43.38,
+      "sampled_mean_cpu_cores": 3.062,
+      "ack_ms_median": 6.057,
+      "ack_ms_max": 11.844,
+      "progress_lag_ms_max": 26.11,
+      "peak_sample": {
+        "descendant_pids": 47,
+        "fds": 571,
+        "rss_kib": 1760124,
+        "pss_kib": 773856,
+        "shm_bytes": 7766016,
+        "shm_capacity_bytes": 1073741824,
+        "cgroup_memory_bytes": 888143872,
+        "chrome_related_without_type": 18
+      },
+      "descendant_pids_after": 0,
+      "cgroup_memory_limit": "4294967296",
+      "worker_cleanup_unverified": false
+    },
+    {
+      "lanes": 5,
+      "status": "PASS",
+      "workload": "controlled Chromium acquisition, five queries, 150 synthetic rows per query",
+      "accepted": 5,
+      "completed_with_snapshots": 25,
+      "duration_seconds": 23.202,
+      "sampled_cpu_seconds": 88.6,
+      "sampled_mean_cpu_cores": 3.819,
+      "ack_ms_median": 6.889,
+      "ack_ms_max": 23.535,
+      "progress_lag_ms_max": 68.183,
+      "peak_sample": {
+        "descendant_pids": 69,
+        "fds": 890,
+        "rss_kib": 2732784,
+        "pss_kib": 1113055,
+        "shm_bytes": 14561280,
+        "shm_capacity_bytes": 1073741824,
+        "cgroup_memory_bytes": 1305600000,
+        "chrome_related_without_type": 29
+      },
+      "descendant_pids_after": 0,
+      "cgroup_memory_limit": "4294967296",
+      "worker_cleanup_unverified": false
+    },
+    {
+      "lanes": 10,
+      "status": "PASS",
+      "workload": "controlled Chromium acquisition, five queries, 150 synthetic rows per query",
+      "accepted": 10,
+      "completed_with_snapshots": 50,
+      "duration_seconds": 51.391,
+      "sampled_cpu_seconds": 201.81,
+      "sampled_mean_cpu_cores": 3.927,
+      "ack_ms_median": 5.183,
+      "ack_ms_max": 16.605,
+      "progress_lag_ms_max": 86.543,
+      "peak_sample": {
+        "descendant_pids": 145,
+        "fds": 1583,
+        "rss_kib": 4922676,
+        "pss_kib": 1968277,
+        "shm_bytes": 23425024,
+        "shm_capacity_bytes": 1073741824,
+        "cgroup_memory_bytes": 2253574144,
+        "chrome_related_without_type": 51
+      },
+      "descendant_pids_after": 0,
+      "cgroup_memory_limit": "4294967296",
+      "worker_cleanup_unverified": false
+    },
+    {
+      "lanes": 15,
+      "status": "FAIL",
+      "error_type": "TimeoutError"
+    },
+    {
+      "lanes": 20,
+      "status": "NOT_RUN"
+    },
+    {
+      "lanes": 25,
+      "status": "NOT_RUN"
+    }
+  ],
+  "counter_check": {
+    "command": "python -m scripts.benchmark_chromium --max-lanes 3",
+    "source": "Same image and runtime with the updated browser counter and timeout reporting from the final validation commit, bind mounted as source.",
+    "browser_main_pid_definition": "Chromium process with --remote-debugging-pipe",
+    "stages": [
+      {
+        "lanes": 1,
+        "status": "PASS",
+        "workload": "controlled Chromium acquisition, five queries, 150 synthetic rows per query",
+        "accepted": 1,
+        "completed_with_snapshots": 5,
+        "duration_seconds": 11.416,
+        "sampled_cpu_seconds": 11.48,
+        "sampled_mean_cpu_cores": 1.006,
+        "ack_ms_median": 22.193,
+        "ack_ms_max": 22.193,
+        "progress_lag_ms_max": 8.949,
+        "peak_sample": {
+          "descendant_pids": 16,
+          "browser_main_pids": 1,
+          "fds": 197,
+          "rss_kib": 618572,
+          "pss_kib": 391092,
+          "shm_bytes": 1921024,
+          "shm_capacity_bytes": 1073741824,
+          "cgroup_memory_bytes": 257396736
+        },
+        "descendant_pids_after": 0,
+        "cgroup_memory_limit": "4294967296",
+        "worker_cleanup_unverified": false,
+        "wave_timeout": false
+      },
+      {
+        "lanes": 2,
+        "status": "PASS",
+        "workload": "controlled Chromium acquisition, five queries, 150 synthetic rows per query",
+        "accepted": 2,
+        "completed_with_snapshots": 10,
+        "duration_seconds": 9.697,
+        "sampled_cpu_seconds": 19.12,
+        "sampled_mean_cpu_cores": 1.972,
+        "ack_ms_median": 19.532,
+        "ack_ms_max": 29.329,
+        "progress_lag_ms_max": 6.669,
+        "peak_sample": {
+          "descendant_pids": 32,
+          "browser_main_pids": 2,
+          "fds": 379,
+          "rss_kib": 1182148,
+          "pss_kib": 602863,
+          "shm_bytes": 3772416,
+          "shm_capacity_bytes": 1073741824,
+          "cgroup_memory_bytes": 463147008
+        },
+        "descendant_pids_after": 0,
+        "cgroup_memory_limit": "4294967296",
+        "worker_cleanup_unverified": false,
+        "wave_timeout": false
+      },
+      {
+        "lanes": 3,
+        "status": "PASS",
+        "workload": "controlled Chromium acquisition, five queries, 150 synthetic rows per query",
+        "accepted": 3,
+        "completed_with_snapshots": 15,
+        "duration_seconds": 12.748,
+        "sampled_cpu_seconds": 36.18,
+        "sampled_mean_cpu_cores": 2.838,
+        "ack_ms_median": 11.749,
+        "ack_ms_max": 39.962,
+        "progress_lag_ms_max": 36.436,
+        "peak_sample": {
+          "descendant_pids": 48,
+          "browser_main_pids": 3,
+          "fds": 563,
+          "rss_kib": 1745532,
+          "pss_kib": 777365,
+          "shm_bytes": 5627904,
+          "shm_capacity_bytes": 1073741824,
+          "cgroup_memory_bytes": 653234176
+        },
+        "descendant_pids_after": 0,
+        "cgroup_memory_limit": "4294967296",
+        "worker_cleanup_unverified": false,
+        "wave_timeout": false
+      }
+    ]
+  }
+}

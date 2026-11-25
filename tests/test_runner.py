@@ -18,9 +18,10 @@ pytestmark = [
 
 
 class FakeProcessRunner(ProcessRunner):
-    def __init__(self, settings, gate):
+    def __init__(self, settings, gate, mode="cooperative"):
         super().__init__(settings)
         self.gate = gate
+        self.mode = mode
 
     def command(self):
         return (
@@ -29,10 +30,13 @@ class FakeProcessRunner(ProcessRunner):
             "tests.fake_worker",
             str(self.settings.ipc_max_bytes),
             str(self.gate),
+            self.mode,
         )
 
 
-async def test_25_isolated_linux_workers(settings, tmp_path):
+async def test_25_isolated_linux_workers(settings, tmp_path, monkeypatch):
+    for name in ("INTERNAL_API_KEY", "CALLBACK_API_KEY", "ASSERTION_KEY", "METADATA_KEY"):
+        monkeypatch.setenv(name, "env-must-not-reach-worker")
     gate = tmp_path / "start"
     runner = FakeProcessRunner(settings, gate)
     if not runner.supported:
@@ -75,4 +79,21 @@ async def test_worker_timeout_cooperative_and_verified(settings, tmp_path, monke
         state = (await status(client, settings, payload)).json()["data"]
         assert [job["status"] for job in state["jobs"]] == ["INTERRUPTED", "SKIPPED"]
         assert state["jobs"][0]["errorCode"] == "BATCH_TIMEOUT"
+        assert not state["active"] and not coord.unsafe
+
+
+async def test_worker_timeout_kills_detached_child(settings, tmp_path, monkeypatch):
+    runner = FakeProcessRunner(settings, tmp_path / "never-start", "wedged")
+    if not runner.supported:
+        pytest.skip("host cannot verify process cleanup")
+    monkeypatch.setattr(runtime, "RUN_TIMEOUT", 0.4)
+    monkeypatch.setattr(runtime, "CANCEL_GRACE", 0.3)
+    monkeypatch.setattr(runtime, "TERMINATE_GRACE", 8)
+    payload = batch(count=2)
+    async with session(settings, runner) as (client, coord, _):
+        assert (await post(client, settings, payload)).status_code == 202
+        await until(lambda: not coord.lanes, timeout=20)
+        state = (await status(client, settings, payload)).json()["data"]
+        assert state["jobs"][0]["errorCode"] == "BATCH_TIMEOUT"
+        assert [job["status"] for job in state["jobs"]] == ["INTERRUPTED", "SKIPPED"]
         assert not state["active"] and not coord.unsafe

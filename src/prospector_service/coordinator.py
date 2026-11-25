@@ -142,19 +142,28 @@ class Coordinator:
             changes = {"availability": "UNAVAILABLE"}
             if index < len(entries) and row["status"] in {"RUNNING", "AWAITING_RESULTS"}:
                 entry = entries[index]
-                if entry["status"] == "COMPLETED" and entry["quality"] in QUALITIES:
-                    records = ROWS.validate_python(entry["rows"])
-                    if len(records) > batch.jobs[index].query.limit:
-                        raise ValueError("invalid result count")
-                    data = ROWS.dump_json(records)
-                    snapshot = self.snapshots.add((actor.solution, batch.batchId, row["id"]), data)
-                    changes.update(status="COMPLETED", quality=entry["quality"])
-                    if snapshot:
-                        changes["availability"] = "AVAILABLE"
+                try:
+                    if entry["status"] == "FAILED":
+                        code = entry.get("error")
+                        error = code if code == "RESULT_MAPPING_FAILED" else "ENGINE_QUERY_FAILED"
+                        changes.update(status="FAILED", error=error)
                     else:
-                        changes["error"] = "SNAPSHOT_CAPACITY"
-                else:
-                    changes.update(status="FAILED", error=entry.get("error", "ENGINE_QUERY_FAILED"))
+                        if entry["status"] != "COMPLETED" or entry["quality"] not in QUALITIES:
+                            raise ValueError("invalid result outcome")
+                        records = ROWS.validate_python(entry["rows"])
+                        if len(records) > batch.jobs[index].query.limit:
+                            raise ValueError("invalid result count")
+                        data = ROWS.dump_json(records)
+                        snapshot = self.snapshots.add(
+                            (actor.solution, batch.batchId, row["id"]), data
+                        )
+                        changes.update(status="COMPLETED", quality=entry["quality"])
+                        if snapshot:
+                            changes["availability"] = "AVAILABLE"
+                        else:
+                            changes["error"] = "SNAPSHOT_CAPACITY"
+                except (TypeError, ValueError, KeyError):
+                    changes.update(status="FAILED", error="RESULT_MAPPING_FAILED")
             else:
                 started = row["status"] != "QUEUED" or index == interrupted
                 changes.update(

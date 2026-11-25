@@ -15,6 +15,9 @@ from prospector_service.schemas import utc_now
 class OfflineEngine:
     supported = True
 
+    def __init__(self, progress_seen):
+        self.progress_seen = progress_seen
+
     async def run(self, batch, notify, stop):
         entries = []
         for index, _ in enumerate(batch.jobs):
@@ -27,7 +30,7 @@ class OfflineEngine:
                     "progress": {"kind": "metric_updated", "name": "requested_limit", "value": 1},
                 }
             )
-            await asyncio.sleep(0.1)
+            await asyncio.wait_for(self.progress_seen.wait(), timeout=15)
             notify({"type": "awaiting", "index": index, "timestamp": utc_now().isoformat()})
             entries.append(
                 {
@@ -43,7 +46,8 @@ class OfflineEngine:
 
 def main():
     settings = Settings.from_env()
-    app = create_app(settings, runner=OfflineEngine())
+    progress_seen = asyncio.Event()
+    app = create_app(settings, runner=OfflineEngine(progress_seen))
     received = {}
 
     @app.post("/api/v1/internal/prospecting-batches/{batch_id}/jobs/{job_id}/events")
@@ -54,6 +58,8 @@ def main():
         assert (event["batchId"], event["jobId"]) == (batch_id, job_id)
         assert "results" not in event
         received[event["eventId"]] = event
+        if event["kind"] == "PROGRESS":
+            progress_seen.set()
         return Response(status_code=204)
 
     @app.get("/__fixture/events")

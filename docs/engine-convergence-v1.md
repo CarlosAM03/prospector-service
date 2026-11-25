@@ -30,7 +30,21 @@ El job Docker escanea la imagen final de Service con el binario oficial verifica
 - CPython 3.11.18 incorpora la corrección del parser HTML que motivó retirar 3.11.14. Setuptools y wheel corregidos se usan para construcción e instalación. Los componentes que pip vendoriza requieren evaluación por ruta de uso y versión, incluso si las distribuciones independientes están ausentes. [Notas de CPython](https://www.python.org/downloads/release/python-31118/)
 - Los componentes Debian que usa Chromium siguen dentro del alcance de revisión de imagen. Un aviso en un servidor que Service no inicia tiene otra exposición que un aviso en biblioteca cliente, TLS o parser. No se suprimen por esa diferencia.
 
-El primer escaneo completo, en `bf4a4dff006f068182b1f8897381760569dbaaf1`, catalogó 260 componentes. Registró 624 asociaciones de vulnerabilidad, con 4 críticas, 149 altas, 258 medias, 187 bajas y 26 sin severidad conocida, y 0 matches de secretos. Las cinco asociaciones Python se dividieron en las dos dependencias parcheadas y tres entradas atribuidas a setuptools 70.3.0. El inventario negó que hubiera una distribución independiente de setuptools en el runtime y el escáner también inspecciona metadatos vendorizados. Las rutas de empaquetado, instalación y `PackageIndex` requieren revisión antes de cerrar esos avisos. Service no usa esas rutas en su API.
+### Comparación de imágenes verificadas
+
+Se recuperaron ambos ZIP de GitHub Actions, se verificó su SHA-256 y se cotejó el mismo ID de imagen entre `image-id.txt`, `scan-summary.json` y `vulnerabilities.json` de cada corrida. También se cotejaron las versiones en `runtime.json` y en el SBOM CycloneDX. El build escaneado del candidato es `4cc4d62a0c2e2b3f0fe4b93f06c4a591e4c4835e`. [Artefacto inicial](https://github.com/CarlosAM03/prospector-service/actions/runs/45544166685/artifacts/14991225688) · [Artefacto del candidato](https://github.com/CarlosAM03/prospector-service/actions/runs/45544888924/artifacts/14990777225)
+
+| Evidencia | Inicial · corrida 12 | Candidato · corrida 13 |
+| --- | --- | --- |
+| ID de imagen | `sha256:123b2bee43fb2cbcb30888768923d2ec5999e8de1811b168808ec388a837dcdf` | `sha256:7a534acd28b067801f158d69d7ff5e6bc24ca0febc425105a166ca4eeb76536b` |
+| dnspython | 2.9.0, CVE-2026-128089 (alta) | 2.9.2, aviso ausente del reporte |
+| OpenTelemetry API | 1.45.1, CVE-2026-126360 (media) | 1.45.2, aviso ausente del reporte |
+| Componentes en SBOM | 260 | 260 |
+| Asociaciones de vulnerabilidad | 624 (619 Debian, 5 Python) | 622 (619 Debian, 3 Python) |
+| Críticas / altas / medias / bajas / sin severidad | 4 / 149 / 258 / 187 / 26 | 4 / 148 / 257 / 187 / 26 |
+| Coincidencias de secretos en la imagen | 0 | 0 |
+
+La comparación de los reportes por ecosistema, identificador, paquete, versión instalada y severidad mostró únicamente la eliminación de los dos avisos indicados. Las tres asociaciones Python restantes se atribuyen a setuptools 70.3.0 en el catálogo de Trivy. Aparecen en el SBOM y el inventario de Python no contiene una distribución independiente de setuptools. La ruta exacta del componente catalogado sigue pendiente de confirmar. Los avisos cubren empaquetado, instalación legacy y `PackageIndex`, rutas ausentes de la API de Service. Los resultados del escáner siguen abiertos y conservan su severidad original.
 
 | Asociación crítica de Trivy | Aplicabilidad en Service |
 | --- | --- |
@@ -60,4 +74,26 @@ El smoke TLS prueba SQLite y WAL bajo un volumen persistente, ausencia de sentin
 
 Service utiliza los nueve jobs existentes. El job Docker agrega inventario, escaneo y el ensayo protegido separado del smoke de red de Platform fake. El volumen Windows local tenía menos de 1 GiB libre al iniciar la convergencia, por lo que no se construyó otra imagen ni se repitió carga allí. Gate D anterior permanece como evidencia histórica. [Perfil anterior con Engine 030a82d](chromium-controlled-v1.json)
 
-En la corrida 12, el smoke Nginx/TLS pasó con las comprobaciones de volatilidad. El perfil Docker por defecto admitió el batch protegido, interrumpió Engine y no produjo snapshots ni dejó descendientes. El perfil upstream sin la excepción falló en `chroot` durante el arranque de Chromium. El diagnóstico directo del perfil de Engine con `chroot` pasó. El perfil integrado con `chroot` y pidfd completó 1 batch y 5 snapshots de hasta 150 filas sintéticas, en 5,471 s, con pico de 232.165.376 bytes de memoria cgroup, un Chromium principal y cero descendientes al cerrar. Escalones 2, 3, 5, 10, 15, 20 y 25 del candidato protegido quedaron NOT_RUN. Los fixtures bloquearon la red. [Job Docker de la corrida 12](https://github.com/CarlosAM03/prospector-service/actions/runs/45544166685/job/138969626814) · [SBOM, escaneo e inventario de la corrida 12](https://github.com/CarlosAM03/prospector-service/actions/runs/45544166685/artifacts/14991225688)
+### Regresión del candidato
+
+Los nueve jobs de la [corrida 13](https://github.com/CarlosAM03/prospector-service/actions/runs/45544888924) finalizaron con éxito.
+
+| Job | Resultado y alcance |
+| --- | --- |
+| [quality](https://github.com/CarlosAM03/prospector-service/actions/runs/45544888924/job/138972011718) | PASS, compilación y Ruff |
+| [unit and contract (3.11)](https://github.com/CarlosAM03/prospector-service/actions/runs/45544888924/job/138972011937) | PASS, 62 unitarias y 2 de contrato en CPython 3.11.18 |
+| [unit and contract (3.13)](https://github.com/CarlosAM03/prospector-service/actions/runs/45544888924/job/138972011990) | PASS, unitarias y contrato |
+| [integration (ubuntu-latest, 3.11)](https://github.com/CarlosAM03/prospector-service/actions/runs/45544888924/job/138972011984) | PASS, 11 pruebas, incluidos 25 workers fake, procedencia del Engine y cleanup forzado |
+| [integration (ubuntu-latest, 3.13)](https://github.com/CarlosAM03/prospector-service/actions/runs/45544888924/job/138972012032) | PASS, integración y Chromium controlado |
+| [integration (windows-latest, 3.11)](https://github.com/CarlosAM03/prospector-service/actions/runs/45544888924/job/138972011899) | PASS, 7 pruebas y 4 omitidas de supervisión Linux, CPython 3.11.9 |
+| [integration (windows-latest, 3.13)](https://github.com/CarlosAM03/prospector-service/actions/runs/45544888924/job/138972011885) | PASS, integración Windows |
+| [package](https://github.com/CarlosAM03/prospector-service/actions/runs/45544888924/job/138972012034) | PASS, build y smoke de instalación offline |
+| [docker-build](https://github.com/CarlosAM03/prospector-service/actions/runs/45544888924/job/138972012083) | PASS, imagen, smokes ASGI y Nginx/TLS, controles de volatilidad, escaneo y laboratorio Chromium |
+
+### Chromium protegido
+
+Con Docker seccomp por defecto, Service admitió el batch y Engine terminó en `ENGINE_INTERRUPTED`, sin snapshots ni descendientes restantes. El perfil upstream falló en `chroot`. La variante de Engine con `chroot` pasó su diagnóstico directo. El perfil de laboratorio de Service, con `chroot` y pidfd, completó **1 batch y 5 snapshots** del fixture de 150 filas sintéticas por consulta. En la imagen del candidato tardó 5,677 s, con un navegador principal, 242.008.064 bytes de pico de memoria cgroup y cero descendientes al cerrar. El contenedor tenía 2 CPU, 2 GiB y la red deshabilitada. El mismo perfil había pasado en 5,471 s en la corrida 12. Los escalones protegidos 2, 3, 5, 10, 15, 20 y 25 quedaron NOT_RUN. [Resultado y perfiles verificados](https://github.com/CarlosAM03/prospector-service/actions/runs/45544888924/artifacts/14990777225) · [Capacidad histórica con otro Engine y perfil](chromium-controlled-v1.json)
+
+### Dictamen para revisión del propietario
+
+Gates A–C y E aprobados en CI con el alcance indicado. Gate D acredita exclusivamente una lane protegida de laboratorio. Antes de promover el candidato quedan pendientes la aprobación del perfil seccomp y del egress de destino, la evaluación de las asociaciones residuales y del UID y volumen compartidos, la validación con Platform real y los escalones de Chromium necesarios para el objetivo de capacidad. La recuperación offline de cuarentena sigue como propuesta para revisión y ensayo. El criterio de liberación de capacidad permanece sujeto a evidencia de terminación.

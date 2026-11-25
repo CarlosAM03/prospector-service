@@ -7,10 +7,6 @@ from prospector_engine import (
     EngineConfig,
     NormalizedBusiness,
     ProspectorConfigurationError,
-    ProspectorExtractionError,
-    ProspectorNavigationError,
-    ProspectorRuntimeError,
-    ProspectorSourceError,
     SearchQuery,
     SearchResult,
     Source,
@@ -20,10 +16,10 @@ from prospector_engine import (
 )
 
 from prospector_service.adapters import engine as module
-from prospector_service.adapters.engine import EngineAdapter
+from prospector_service.adapters.engine import execute_batch
 from prospector_service.adapters.results import map_results
 from prospector_service.errors import EngineExecutionError
-from prospector_service.schemas import ProspectingQuery
+from prospector_service.schemas import BatchRequest, ProspectingQuery
 
 
 def query():
@@ -106,67 +102,59 @@ def test_invalid_engine_result_fails_explicitly(change):
         map_results(source, query())
 
 
-def test_engine_adapter_uses_public_query_config(settings, monkeypatch):
-    seen = {}
+def test_execute_batch_uses_selected_indices_and_progress(monkeypatch):
+    from prospector_engine import CancellationToken
 
-    class Spy:
+    seen = []
+
+    class Engine:
         def __init__(self, config):
-            seen["config"] = config
+            assert config.limit == 150
 
-        def search(self, request):
-            seen["query"] = request
-            return result()
+        def search_many(self, queries):
+            assert [job.limit for job in queries] == [2, 2]
+            return SimpleNamespace(
+                entries=[
+                    SimpleNamespace(
+                        status=SimpleNamespace(value="partial"), result=result(), export_indices=[1]
+                    ),
+                    SimpleNamespace(status=SimpleNamespace(value="failed")),
+                ]
+            )
 
-    monkeypatch.setattr(module, "ProspectorEngine", Spy)
-    adapter = EngineAdapter(settings)
-    mapped = adapter.execute(query(), adapter.new_token())
-    assert mapped[0].name == "CAFE UNO"
-    assert seen["config"] == EngineConfig(limit=2, headless=False, browser_channel="msedge")
-    assert seen["query"] == SearchQuery(Source.GOOGLE_MAPS, "cafes", "Tijuana")
+    def observe(listener):
+        from contextlib import nullcontext
 
+        listener(SimpleNamespace(stage="query", query_index=0, kind="execution_started"))
+        listener(SimpleNamespace(stage="feed", query_index=None, kind="stage_started"))
+        return nullcontext()
 
-@pytest.mark.parametrize(
-    "error,code,runtime",
-    [
-        (ProspectorConfigurationError, "ENGINE_CONFIGURATION_ERROR", False),
-        (ProspectorSourceError, "ENGINE_SOURCE_UNSUPPORTED", False),
-        (ProspectorNavigationError, "ENGINE_NAVIGATION_FAILED", False),
-        (ProspectorExtractionError, "ENGINE_EXTRACTION_FAILED", False),
-        (ProspectorRuntimeError, "ENGINE_RUNTIME_UNAVAILABLE", True),
-    ],
-)
-def test_typed_engine_errors(settings, monkeypatch, error, code, runtime):
-    class Spy:
-        def __init__(self, config):
-            pass
-
-        def search(self, request):
-            raise error("private details must not escape")
-
-    monkeypatch.setattr(module, "ProspectorEngine", Spy)
-    adapter = EngineAdapter(settings)
-    with pytest.raises(EngineExecutionError) as failure:
-        adapter.execute(query(), adapter.new_token())
-    assert failure.value.code == code and failure.value.runtime_unavailable is runtime
-    assert "private" not in str(failure.value)
-
-
-def test_unexpected_engine_error_remains_detectable(settings, monkeypatch):
-    class Spy:
-        def __init__(self, config):
-            raise LookupError("controlled")
-
-    monkeypatch.setattr(module, "ProspectorEngine", Spy)
-    adapter = EngineAdapter(settings)
-    with pytest.raises(LookupError):
-        adapter.execute(query(), adapter.new_token())
+    monkeypatch.setattr(module, "ProspectorEngine", Engine)
+    monkeypatch.setattr(module, "observe_execution", observe)
+    batch = BatchRequest.model_validate(
+        {
+            "batchId": "c" + "1" * 24,
+            "jobs": [{"jobId": "c" + str(i) * 24, "query": query()} for i in (2, 3)],
+        }
+    )
+    execute_batch(batch, "chromium", True, CancellationToken(), seen.append)
+    assert [item["type"] for item in seen] == ["running", "progress", "result"]
+    assert seen[-1]["entries"][0]["quality"] == "PARTIAL"
+    assert [row["name"] for row in seen[-1]["entries"][0]["rows"]] == ["CAFE DOS"]
+    assert seen[-1]["entries"][1]["status"] == "FAILED"
 
 
 @pytest.mark.integration
-def test_real_installed_engine_pipeline_with_controlled_source(settings, monkeypatch):
-    # Only this offline test replaces the private acquisition seam in memory.
-    # Actual installed public facade, global normalization, models, and mapping execute.
+def test_real_installed_engine_batch_and_pin(monkeypatch):
+    import json
+    from importlib.metadata import distribution
+
+    from prospector_engine import CancellationToken
+
+    limits = []
+
     def source(request, limit, **options):
+        limits.append(limit)
         return SimpleNamespace(
             query=request,
             businesses=[Business(" cafe ")],
@@ -175,38 +163,67 @@ def test_real_installed_engine_pipeline_with_controlled_source(settings, monkeyp
         )
 
     monkeypatch.setattr("prospector_engine.engines.prospector_engine._run_google_maps", source)
-    adapter = EngineAdapter(settings)
-    rows = adapter.execute(query(), adapter.new_token())
-    assert rows[0].name == "CAFE" and rows[0].sourceIdentifier is None
+    batch = BatchRequest.model_validate(
+        {
+            "batchId": "c" + "1" * 24,
+            "jobs": [
+                {"jobId": "c" + str(i) * 24, "query": query().model_copy(update={"limit": limit})}
+                for i, limit in ((2, 150), (3, 1))
+            ],
+        }
+    )
+    events = []
+    execute_batch(batch, "chromium", True, CancellationToken(), events.append)
+    assert limits == [150, 1]
+    assert [event["index"] for event in events if event["type"] == "running"] == [0, 1]
+    assert all(entry["rows"][0]["name"] == "CAFE" for entry in events[-1]["entries"])
+    direct = json.loads(distribution("prospector-engine").read_text("direct_url.json"))
+    assert direct["vcs_info"]["commit_id"] == "68aca39b42a21ae8c0b54b6e6ca93840fdad27e5"
 
 
 @pytest.mark.integration
-def test_real_package_public_preflight_without_network():
-    import importlib.metadata
-    import inspect
+def test_real_engine_rejects_151_before_acquisition():
+    from prospector_engine import BatchQuery, ProspectorEngine
 
-    from prospector_engine import ProspectorEngine
-
-    engine = ProspectorEngine(EngineConfig(limit=101))
+    engine = ProspectorEngine(EngineConfig(limit=150))
     with pytest.raises(ProspectorConfigurationError):
-        engine.search(SearchQuery(Source.GOOGLE_MAPS, "cafe", "Tijuana"))
-    assert str(inspect.signature(ProspectorEngine.search)).startswith("(self, query:")
-    distribution = importlib.metadata.distribution("prospector-engine")
-    assert distribution.version == "0.1.0.dev0"
-    import json
-
-    direct = json.loads(distribution.read_text("direct_url.json"))
-    assert direct["vcs_info"]["commit_id"] == "70f6081688db5c5bc5ea612f5fabd5724aab0b20"
+        engine.search_many([BatchQuery(SearchQuery(Source.GOOGLE_MAPS, "cafe", "TJ"), 151)])
 
 
 @pytest.mark.browser
-def test_real_browser_readiness_probe_without_external_network(settings):
-    adapter = EngineAdapter(
-        settings.model_copy(
-            update={
-                "engine_browser": "chromium",
-                "engine_headless": True,
-            }
-        )
-    )
-    assert adapter.probe()
+def test_real_browser_smoke_without_external_network():
+    from prospector_engine.browser import BrowserRuntime
+
+    with BrowserRuntime(headless=True, channel=None) as runtime:
+        page = runtime.new_page()
+        page.set_content("<title>Prospector controlled browser</title>")
+        assert page.title() == "Prospector controlled browser"
+
+
+@pytest.mark.integration
+def test_protected_launch_error_does_not_retry_without_sandbox(monkeypatch):
+    from prospector_engine import ProspectorRuntimeError
+    from prospector_engine.browser import BrowserRuntime
+    from prospector_engine.engines import browser_runtime
+
+    calls = []
+
+    def launch(**options):
+        calls.append(options)
+        raise OSError("synthetic denied sandbox startup")
+
+    class Driver:
+        chromium = SimpleNamespace(launch=launch)
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_):
+            return False
+
+    monkeypatch.setenv("PROSPECTOR_CHROMIUM_SANDBOX", "1")
+    monkeypatch.setattr(browser_runtime, "sync_playwright", Driver)
+    with pytest.raises(ProspectorRuntimeError):
+        with BrowserRuntime(headless=True, channel=None):
+            pytest.fail("protected startup should fail closed")
+    assert len(calls) == 1 and calls[0]["chromium_sandbox"] is True

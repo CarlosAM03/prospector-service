@@ -1,0 +1,2 @@
+# Use the Platform source IP or subnet as observed at this proxy.
+allow 192.0.2.10/32;

@@ -1,4 +1,7 @@
 recursive-include docs *.md *.yaml *.json
 recursive-include requirements *.txt
 recursive-include scripts *.py
+recursive-include scripts/vendor/playwright *.json LICENSE NOTICE
+recursive-include deploy *.conf *.example
+include compose.yaml
 include Dockerfile .dockerignore .env.example

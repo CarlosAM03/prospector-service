@@ -16,3 +16,5 @@ tests
 docs
 Docs
 .validation-*.log
+data
+.codex

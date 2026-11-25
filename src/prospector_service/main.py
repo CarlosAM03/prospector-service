@@ -1,66 +1,71 @@
 import logging
+import sqlite3
+import tempfile
 from contextlib import asynccontextmanager
 
 import httpx
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
-from pydantic import ValidationError
 from starlette.exceptions import HTTPException
 
-from .adapters.callbacks import CallbackClient
-from .api import BodyLimitMiddleware, error_response, router
+from .adapters.callbacks import CallbackRelay
+from .api import error_response, router
 from .config import Settings
+from .coordinator import Coordinator
 from .errors import ServiceError
-from .jobs import JobService
-from .ports import EnginePort, UnavailableEngine
+from .runner import ProcessRunner, memory_filesystem
 
 
 def create_app(
     settings: Settings | None = None,
     *,
-    engine: EnginePort | None = None,
+    runner=None,
     callback_transport: httpx.AsyncBaseTransport | None = None,
-) -> FastAPI:
+):
     if settings is None:
         try:
             settings = Settings.from_env()
-        except ValidationError:
-            raise RuntimeError("Invalid Service configuration; check environment") from None
+        except (ValueError, OSError):
+            raise RuntimeError("Invalid Service configuration") from None
 
     @asynccontextmanager
-    async def lifespan(application: FastAPI):
-        selected = engine
-        if selected is None:
-            try:
-                from .adapters.engine import EngineAdapter
-
-                selected = EngineAdapter(settings)
-            except ImportError:
-                selected = UnavailableEngine()
-        callback = CallbackClient(settings, transport=callback_transport)
-        jobs = JobService(settings, selected, callback)
-        application.state.jobs = jobs
+    async def lifespan(application):
+        selected = runner or ProcessRunner(settings)
+        previous_temp = tempfile.tempdir
+        if memory_filesystem(settings.worker_temp_dir):
+            # openpyxl uses worksheet staging files. Keep them on verified volatile storage.
+            tempfile.tempdir = str(settings.worker_temp_dir.resolve())
+        relay = CallbackRelay(settings, callback_transport)
         try:
-            await jobs.start()
-            yield
+            try:
+                coordinator = Coordinator(settings, selected, relay)
+            except BaseException:
+                await relay.close()
+                raise
+            application.state.coordinator = coordinator
+            try:
+                coordinator.start()
+                yield
+            finally:
+                await coordinator.close()
         finally:
-            await jobs.stop()
+            tempfile.tempdir = previous_temp
 
     application = FastAPI(
         title="Prospector Service",
-        version="0.1.0.dev0",
+        version="1.0.0",
         lifespan=lifespan,
         docs_url=None,
         redoc_url=None,
         openapi_url=None,
     )
     application.state.settings = settings
-    application.add_middleware(BodyLimitMiddleware, limit=settings.max_request_bytes)
+    application.router.redirect_slashes = False
     application.include_router(router)
 
     @application.exception_handler(RequestValidationError)
     async def invalid_request(request: Request, exc: RequestValidationError):
-        return error_response(400, "INVALID_REQUEST", "Request does not match the Job contract")
+        return error_response(400, "INVALID_REQUEST", "Request does not match the batch contract")
 
     @application.exception_handler(ServiceError)
     async def service_error(request: Request, exc: ServiceError):
@@ -70,12 +75,14 @@ def create_app(
     async def http_error(request: Request, exc: HTTPException):
         return error_response(exc.status_code, "HTTP_ERROR", "Request could not be processed")
 
+    @application.exception_handler(sqlite3.Error)
+    async def storage_error(request: Request, exc: sqlite3.Error):
+        request.app.state.coordinator.unsafe = True
+        return error_response(503, "SERVICE_UNAVAILABLE", "Metadata is unavailable")
+
     @application.exception_handler(Exception)
     async def unexpected_error(request: Request, exc: Exception):
         logging.getLogger(__name__).error("request_failed")
-        return error_response(500, "INTERNAL_ERROR", "Service could not process the request")
+        return error_response(500, "INTERNAL_ERROR", "Request could not be processed")
 
     return application
-
-
-app = create_app()

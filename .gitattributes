@@ -1,2 +1,4 @@
 # Preserve the approved external contract's exact bytes/hash on Linux and Windows.
 docs/contracts/prospector-service-api.v1.yaml -text whitespace=cr-at-eol
+# Preserve the vendored Playwright blobs byte for byte on every checkout.
+scripts/vendor/playwright/* -text whitespace=cr-at-eol

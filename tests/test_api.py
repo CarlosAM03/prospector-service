@@ -1,219 +1,148 @@
-from copy import deepcopy
+import json
 
 import pytest
-from fastapi.testclient import TestClient
 
-from prospector_service.config import Settings
-from prospector_service.main import create_app
-from prospector_service.ports import UnavailableEngine
-
-from .conftest import FakeEngine, another, wait_until
-
-HEADERS = {"X-API-Key": "test-inbound-secret"}
+from .conftest import BASE, FakeRunner, batch, headers, job_request, post, session, status, until
 
 
-def test_acceptance_is_immediate_and_callbacks_contractual(settings, payload, callbacks):
-    engine = FakeEngine(blocked=True)
-    received, transport = callbacks
-    app = create_app(settings, engine=engine, callback_transport=transport)
-    with TestClient(app) as client:
-        response = client.post("/api/v1/prospecting/jobs", json=payload, headers=HEADERS)
-        assert response.status_code == 202
-        assert response.headers["content-type"] == "application/json"
-        assert response.json()["data"]["status"] == "QUEUED"
-        assert response.json()["meta"] == {} and response.json()["success"] is True
-        assert client.get("/health/live").status_code == 200
-        engine.release.set()
-        wait_until(lambda: len(received) == 3)
-        events = [entry[2] for entry in received]
-        assert [event["status"] for event in events] == ["QUEUED", "RUNNING", "COMPLETED"]
-        assert [event["sequence"] for event in events] == [1, 2, 3]
-        assert len({event["eventId"] for event in events}) == 3
-        assert all(event["timestamp"].endswith("Z") for event in events)
-        assert all(event["progress"] is None for event in events)
-        assert events[0]["results"] is None and events[1]["results"] is None
-        assert events[2]["results"][0]["name"] == "CAFE UNO"
-        assert all(event["error"] is None for event in events)
-        assert received[0][1]["x-api-key"] == "test-outbound-secret"
-
-
-@pytest.mark.parametrize("key", [None, "", "wrong", "Bearer flutter-jwt"])
-def test_authentication_rejects_invalid_key(settings, payload, engine, callbacks, key):
-    app = create_app(settings, engine=engine, callback_transport=callbacks[1])
-    with TestClient(app) as client:
-        response = client.post(
-            "/api/v1/prospecting/jobs",
-            json=payload,
-            headers={} if key is None else {"X-API-Key": key},
+@pytest.mark.parametrize("count", range(7))
+async def test_cardinality_and_atomic_acceptance(settings, count):
+    async with session(settings) as (client, coordinator, _):
+        response = await post(client, settings, batch(count=count))
+        valid = 1 <= count <= 5
+        assert response.status_code == (202 if valid else 400)
+        assert coordinator.store.db.execute("SELECT count(*) FROM jobs").fetchone()[0] == (
+            count if valid else 0
         )
-        assert response.status_code == 401
-        assert response.json()["error"]["code"] == "UNAUTHORIZED"
-        assert not engine.calls
-
-
-def test_missing_secrets_fails_closed(payload):
-    with TestClient(create_app(Settings(app_env="test"), engine=FakeEngine())) as client:
-        assert client.get("/health/live").status_code == 200
-        assert client.get("/health/ready").status_code == 503
-        assert (
-            client.post("/api/v1/prospecting/jobs", json=payload, headers=HEADERS).status_code
-            == 503
-        )
+        if valid:
+            assert response.json()["data"]["jobIds"] == [
+                job["jobId"] for job in batch(count=count)["jobs"]
+            ]
 
 
 @pytest.mark.parametrize(
-    "field,value",
+    ("field", "value"),
     [
-        ("jobId", "invalid"),
-        ("tenantId", "not-a-cuid"),
-        ("query", None),
-        ("query.limit", 101),
-        ("query.limit", 0),
-        ("query.limit", True),
-        ("query.limit", "2"),
-        ("query.keyword", ""),
-        ("query.location", "  "),
-        ("query.source", "other"),
-        ("callbackUrl", "https://attacker.example.com/steal"),
-        ("callbackUrl", "https://platform.example.com@attacker.example.com/path"),
-        ("callbackUrl", "/api/v1/internal/prospecting-jobs/other/events"),
-        ("callbackUrl", "//attacker.example.com/x"),
+        ("limit", 0),
+        ("limit", 151),
+        ("limit", True),
+        ("limit", "1"),
+        ("limit", 1.0),
+        ("keyword", " "),
+        ("location", ""),
+        ("source", "unknown"),
     ],
 )
-def test_invalid_requests_never_execute_engine(settings, payload, engine, callbacks, field, value):
-    body = deepcopy(payload)
-    parts = field.split(".")
-    if len(parts) == 2:
-        body[parts[0]][parts[1]] = value
-    else:
-        body[field] = value
-    with TestClient(create_app(settings, engine=engine, callback_transport=callbacks[1])) as client:
-        response = client.post("/api/v1/prospecting/jobs", json=body, headers=HEADERS)
-        assert response.status_code == 400
-        error = response.json()["error"]
-        assert set(error) == {"code", "message", "details", "timestamp"}
-        assert "input" not in str(error) and "Traceback" not in str(error)
-        assert not engine.calls
+async def test_invalid_query_does_not_write(settings, field, value):
+    payload = batch()
+    payload["jobs"][-1]["query"][field] = value
+    async with session(settings) as (client, coordinator, _):
+        assert (await post(client, settings, payload)).status_code == 400
+        assert not coordinator.store.db.execute("SELECT id FROM batches").fetchall()
 
 
-def test_request_limits_and_malformed_json(settings, payload, engine, callbacks):
-    with TestClient(create_app(settings, engine=engine, callback_transport=callbacks[1])) as client:
+async def test_duplicate_invalid_ids_and_retired_route(settings):
+    async with session(settings) as (client, coordinator, _):
+        payload = batch()
+        payload["jobs"][1]["jobId"] = payload["jobs"][0]["jobId"]
+        assert (await post(client, settings, payload)).status_code == 400
+        payload = batch()
+        payload["jobs"][1]["jobId"] = "invalid"
+        assert (await post(client, settings, payload)).status_code == 400
+        assert (await client.post("/api/v1/prospecting/jobs")).status_code == 404
         assert (
-            client.post("/api/v1/prospecting/jobs", content=b"{", headers=HEADERS).status_code
-            == 400
-        )
-        response = client.post("/api/v1/prospecting/jobs", content=b"x" * 65537, headers=HEADERS)
-        assert response.status_code == 400 and not engine.calls
+            await client.post("/api/v1/internal/prospecting-batches/id/jobs/id/events")
+        ).status_code == 404
+        assert not coordinator.store.db.execute("SELECT id FROM jobs").fetchall()
 
 
-def test_duplicate_and_saturation_do_not_promise_work(settings, payload, callbacks):
-    settings = settings.model_copy(update={"queue_capacity": 1})
-    engine = FakeEngine(blocked=True)
-    app = create_app(settings, engine=engine, callback_transport=callbacks[1])
-    with TestClient(app) as client:
+@pytest.mark.parametrize(
+    "override",
+    [
+        {"iss": "wrong"},
+        {"aud": "other"},
+        {"solutionId": "other"},
+        {"method": "GET"},
+        {"path": "/wrong"},
+        {"query": "different"},
+        {"bodySha256": "wrong"},
+        {"idempotencyKey": "wrong"},
+        {"exp": 1},
+        {"iat": True},
+        {"tenantId": "bad"},
+        {"sub": "bad"},
+    ],
+)
+async def test_assertion_is_bound(settings, override):
+    async with session(settings) as (client, _, _):
+        assert (await post(client, settings, batch(), overrides=override)).status_code == 401
+
+
+async def test_missing_wrong_keys_and_permissions(settings):
+    payload = batch()
+    raw = json.dumps(payload).encode()
+    valid = headers(settings, "POST", BASE, "prospecting:batches:create", key="request", body=raw)
+    async with session(settings) as (client, _, _):
+        for name, value in (("X-API-Key", "wrong"), ("X-Platform-Assertion", "a.b.c")):
+            assert (
+                await client.post(BASE, content=raw, headers={**valid, name: value})
+            ).status_code == 401
         assert (
-            client.post("/api/v1/prospecting/jobs", json=payload, headers=HEADERS).status_code
-            == 202
-        )
-        assert engine.started.wait(2)
-        second = another(payload, 3)
+            await client.post(BASE, content=raw, headers={"Idempotency-Key": "request"})
+        ).status_code == 401
+        assert (await post(client, settings, payload, actor="platform")).status_code == 403
         assert (
-            client.post("/api/v1/prospecting/jobs", json=second, headers=HEADERS).status_code == 202
-        )
+            await post(client, settings, payload, overrides={"scope": "different"})
+        ).status_code == 403
         assert (
-            client.post("/api/v1/prospecting/jobs", json=second, headers=HEADERS).status_code == 409
-        )
-        third = another(payload, 4)
+            await client.post(BASE, content=b"x" * (settings.max_request_bytes + 1))
+        ).status_code == 413
+
+
+async def test_owner_scope_and_technical_delegation(settings):
+    async with session(settings) as (client, coord, _):
+        payload = batch(count=1, limit=1)
+        assert (await post(client, settings, payload)).status_code == 202
+        await until(lambda: not coord.lanes)
+        own = await job_request(client, settings, payload, "results")
+        assert own.status_code == 200
+        assert own.headers["Cache-Control"] == "no-store"
+        missing = await job_request(client, settings, batch(7, count=1), "results")
+        for claims in ({"tenant": 2}, {"owner": 2}, {"owner": 2, "overrides": {"role": "ADMIN"}}):
+            other = await job_request(client, settings, payload, "results", **claims)
+            assert other.status_code == missing.status_code == 404
+            assert other.json()["error"]["code"] == missing.json()["error"]["code"]
+        assert (await status(client, settings, payload, actor="platform")).status_code == 403
         assert (
-            client.post("/api/v1/prospecting/jobs", json=third, headers=HEADERS).status_code == 503
-        )
-        assert third["jobId"] not in app.state.jobs.registry
-        assert client.get("/health/ready").status_code == 503
-        engine.release.set()
-
-
-@pytest.mark.parametrize("engine", [UnavailableEngine(), FakeEngine(available=False)])
-def test_readiness_distinguishes_process_from_engine(settings, engine, callbacks, payload):
-    with TestClient(create_app(settings, engine=engine, callback_transport=callbacks[1])) as client:
-        assert client.get("/health/live").status_code == 200
-        assert client.get("/health/ready").status_code == 503
+            await job_request(client, settings, payload, "results", actor="platform")
+        ).status_code == 403
         assert (
-            client.post("/api/v1/prospecting/jobs", json=payload, headers=HEADERS).status_code
-            == 503
-        )
-
-
-def test_registry_capacity_and_tenant_binding(settings, payload, engine, callbacks):
-    settings = settings.model_copy(update={"max_registered_jobs": 1})
-    app = create_app(settings, engine=engine, callback_transport=callbacks[1])
-    with TestClient(app) as client:
+            await job_request(
+                client, settings, payload, "results", actor="platform", scope="import"
+            )
+        ).status_code == 200
         assert (
-            client.post("/api/v1/prospecting/jobs", json=payload, headers=HEADERS).status_code
-            == 202
-        )
-        wait_until(lambda: len(callbacks[0]) == 3)
+            await job_request(client, settings, payload, "export?format=csv", actor="platform")
+        ).status_code == 403
         assert (
-            client.post(
-                "/api/v1/prospecting/jobs", json=another(payload, 3), headers=HEADERS
-            ).status_code
-            == 503
-        )
-        job = app.state.jobs.lookup(payload["jobId"], payload["tenantId"])
-        assert job is not None
-        assert app.state.jobs.lookup(payload["jobId"], "c" + "9" * 24) is None
-
-
-def test_relative_callback_and_no_unapproved_routes(settings, payload, engine, callbacks):
-    payload["callbackUrl"] = f"/api/v1/internal/prospecting-jobs/{payload['jobId']}/events"
-    app = create_app(settings, engine=engine, callback_transport=callbacks[1])
-    assert set(app.openapi()["paths"]) == {
-        "/health/live",
-        "/health/ready",
-        "/api/v1/prospecting/jobs",
-    }
-    with TestClient(app) as client:
+            await job_request(client, settings, payload, "export?format=csv")
+        ).status_code == 200
         assert (
-            client.post("/api/v1/prospecting/jobs", json=payload, headers=HEADERS).status_code
-            == 202
-        )
+            await job_request(client, settings, payload, "export?format=xlsx")
+        ).content.startswith(b"PK")
+        assert (await status(client, settings, payload)).json()["data"]["jobs"][0]["ackAt"] is None
 
 
-def test_secrets_and_untrusted_validation_input_never_logged(settings, payload, callbacks, caplog):
-    engine = FakeEngine(failure=RuntimeError("test-outbound-secret /private/path <html>"))
-    app = create_app(settings, engine=engine, callback_transport=callbacks[1])
-    with TestClient(app) as client:
-        assert (
-            client.post("/api/v1/prospecting/jobs", json=payload, headers=HEADERS).status_code
-            == 202
-        )
-        wait_until(lambda: len(callbacks[0]) == 3)
-    terminal = callbacks[0][-1][2]
-    assert terminal["status"] == "FAILED"
-    assert terminal["error"]["code"] == "ENGINE_UNEXPECTED_ERROR"
-    for text in ("test-outbound-secret", "test-inbound-secret", "/private/path", "<html>"):
-        assert text not in str(terminal) and text not in caplog.text
-    assert "test-inbound-secret" not in repr(settings)
-
-
-def test_shutdown_requests_cooperative_cancel(settings, payload, callbacks):
-    engine = FakeEngine(blocked=True)
-    app = create_app(settings, engine=engine, callback_transport=callbacks[1])
-    with TestClient(app) as client:
-        assert (
-            client.post("/api/v1/prospecting/jobs", json=payload, headers=HEADERS).status_code
-            == 202
-        )
-        assert engine.started.wait(2)
-    assert callbacks[0][-1][2]["status"] == "CANCELLED"
-    assert app.state.jobs.worker.done()
-
-
-def test_keyword_is_not_silently_normalized(settings, payload, engine, callbacks):
-    payload["query"]["keyword"] = "  cafe  "
-    with TestClient(create_app(settings, engine=engine, callback_transport=callbacks[1])) as client:
-        assert (
-            client.post("/api/v1/prospecting/jobs", json=payload, headers=HEADERS).status_code
-            == 202
-        )
-        wait_until(lambda: bool(engine.calls))
-        assert engine.calls[0].keyword == "  cafe  "
+async def test_replay_and_conflicts_precede_capacity_check(settings):
+    runner = FakeRunner(blocked=True)
+    payload = batch(count=2)
+    async with session(settings, runner) as (client, coord, _):
+        first = await post(client, settings, payload, key="retry")
+        coord.unsafe = True
+        replay = await post(client, settings, payload, key="retry")
+        assert replay.status_code == 202 and replay.json() == first.json()
+        assert (await post(client, settings, batch(count=3), key="retry")).status_code == 409
+        assert (await post(client, settings, batch(2), key="different")).status_code == 503
+        coord.unsafe = False
+        assert (await post(client, settings, batch(2), key="different")).status_code == 409
+        runner.release.set()

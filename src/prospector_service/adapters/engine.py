@@ -1,89 +1,114 @@
-import logging
+import math
+from collections.abc import Callable
 
 from prospector_engine import (
-    CancellationRequested,
+    BatchInterruptedError,
+    BatchQuery,
     CancellationToken,
     EngineConfig,
-    ExecutionEvent,
-    ProspectorConfigurationError,
     ProspectorEngine,
-    ProspectorError,
-    ProspectorExtractionError,
-    ProspectorNavigationError,
-    ProspectorRuntimeError,
-    ProspectorSourceError,
     SearchQuery,
     Source,
     cancellation_scope,
     observe_execution,
 )
 
-from ..config import Settings
-from ..errors import EngineCancelled, EngineExecutionError
-from ..schemas import BusinessResult, ProspectingQuery
+from ..schemas import BatchRequest
 from .results import map_results
 
-logger = logging.getLogger(__name__)
+STAGES = {
+    "query",
+    "navigation",
+    "feed",
+    "detail",
+    "details",
+    "website",
+    "website_enrichment",
+    "normalization",
+    "deduplication",
+    "google_maps",
+    "enrichment",
+    "extraction",
+    "runtime",
+}
+METRICS = {
+    "requested_limit",
+    "duplicates_suppressed",
+    "exportable_businesses",
+    "processed_businesses",
+    "observed_businesses",
+    "businesses_found",
+}
 
 
-class EngineAdapter:
-    def __init__(self, settings: Settings):
-        self.settings = settings
+def execute_batch(
+    batch: BatchRequest, browser: str, headless: bool, token: CancellationToken, send: Callable
+):
+    cursor = None
 
-    def new_token(self) -> CancellationToken:
-        return CancellationToken()
+    def observe(event):
+        nonlocal cursor
+        if event.stage == "query" and event.query_index is not None:
+            if event.kind == "execution_started":
+                cursor = event.query_index
+                send({"type": "running", "index": cursor})
+                return
+            if event.kind in {"execution_completed", "execution_failed"}:
+                send({"type": "awaiting", "index": cursor})
+                cursor = None
+                return
+        if cursor is None or event.query_index not in {None, cursor}:
+            return
+        if event.kind in {"stage_started", "stage_completed"} and event.stage in STAGES:
+            progress = {"kind": event.kind, "stage": event.stage}
+        elif (
+            event.kind == "metric_updated"
+            and event.name in METRICS
+            and type(event.value) in {int, float}
+            and math.isfinite(event.value)
+        ):
+            progress = {"kind": event.kind, "name": event.name, "value": event.value}
+        else:
+            return
+        send({"type": "progress", "index": cursor, "progress": progress})
 
-    def _config(self, limit: int) -> EngineConfig:
-        return EngineConfig(
-            limit=limit,
-            headless=self.settings.engine_headless,
-            browser_channel="msedge" if self.settings.engine_browser == "msedge" else None,
+    engine = ProspectorEngine(
+        EngineConfig(
+            limit=150, headless=headless, browser_channel="msedge" if browser == "msedge" else None
         )
-
-    def probe(self) -> bool:
+    )
+    queries = [
+        BatchQuery(
+            SearchQuery(Source.GOOGLE_MAPS, job.query.keyword, job.query.location), job.query.limit
+        )
+        for job in batch.jobs
+    ]
+    interrupted = None
+    with cancellation_scope(token), observe_execution(observe):
         try:
-            from prospector_engine.browser import BrowserRuntime
+            result = engine.search_many(queries)
+        except BatchInterruptedError as exc:
+            result = exc.completed
+            interrupted = exc.interrupted_query_index
 
-            config = self._config(1)
-            ProspectorEngine(config)
-            with BrowserRuntime(
-                headless=config.headless, channel=config.browser_channel
-            ) as runtime:
-                page = runtime.new_page()
-                page.set_content("<html><title>Prospector readiness</title></html>")
-                return page.title() == "Prospector readiness"
-        except Exception:
-            logger.warning("engine_probe_failed")
-            return False
-
-    def execute(
-        self, query: ProspectingQuery, token: CancellationToken
-    ) -> tuple[BusinessResult, ...]:
-        def observed(event: ExecutionEvent) -> None:
-            # No query/business text, raw exception, URL or credentials in Service logs.
-            logger.info(
-                "engine_event", extra={"engine_kind": event.kind, "engine_stage": event.stage}
+    entries = []
+    for index, entry in enumerate(result.entries):
+        if entry.status.value == "failed":
+            entries.append({"status": "FAILED", "error": "ENGINE_QUERY_FAILED"})
+            continue
+        try:
+            query = batch.jobs[index].query
+            indices = entry.export_indices
+            if len(indices) > query.limit:
+                raise ValueError("result exceeds requested limit")
+            rows = map_results(entry.result, query, indices)
+            entries.append(
+                {
+                    "status": "COMPLETED",
+                    "quality": entry.status.value.upper(),
+                    "rows": [row.model_dump(mode="json") for row in rows],
+                }
             )
-
-        try:
-            engine = ProspectorEngine(self._config(query.limit))
-            request = SearchQuery(Source.GOOGLE_MAPS, query.keyword, query.location)
-            with cancellation_scope(token), observe_execution(observed):
-                token.raise_if_cancelled()
-                return map_results(engine.search(request), query)
-        except CancellationRequested as exc:
-            raise EngineCancelled() from exc
-        except ProspectorRuntimeError as exc:
-            raise EngineExecutionError(
-                "ENGINE_RUNTIME_UNAVAILABLE", runtime_unavailable=True
-            ) from exc
-        except ProspectorConfigurationError as exc:
-            raise EngineExecutionError("ENGINE_CONFIGURATION_ERROR") from exc
-        except ProspectorSourceError as exc:
-            raise EngineExecutionError("ENGINE_SOURCE_UNSUPPORTED") from exc
-        except ProspectorNavigationError as exc:
-            raise EngineExecutionError("ENGINE_NAVIGATION_FAILED") from exc
-        except ProspectorExtractionError as exc:
-            raise EngineExecutionError("ENGINE_EXTRACTION_FAILED") from exc
-        except ProspectorError as exc:
-            raise EngineExecutionError("ENGINE_EXECUTION_FAILED") from exc
+        except Exception:
+            entries.append({"status": "FAILED", "error": "RESULT_MAPPING_FAILED"})
+    send({"type": "result", "entries": entries, "interrupted": interrupted})

@@ -1,0 +1,1452 @@
+{
+    "openapi": "3.1.0",
+    "info": {
+        "title": "Prospector Service batch API",
+        "version": "1.0.0"
+    },
+    "paths": {
+        "/api/v1/prospecting/batches": {
+            "post": {
+                "summary": "Admit one to five ordered jobs",
+                "security": [
+                    {
+                        "ServiceApiKey": [],
+                        "PlatformAssertion": []
+                    }
+                ],
+                "responses": {
+                    "202": {
+                        "description": "Committed receipt or replay",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Receipt"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Service error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Service error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Service error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "Service error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "413": {
+                        "description": "Service error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "description": "Service error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "Service error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    }
+                },
+                "parameters": [
+                    {
+                        "name": "Idempotency-Key",
+                        "in": "header",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "pattern": "^[A-Za-z0-9._~-]{1,128}$"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/BatchRequest"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/prospecting/batches/{batchId}": {
+            "parameters": [
+                {
+                    "name": "batchId",
+                    "in": "path",
+                    "required": true,
+                    "schema": {
+                        "$ref": "#/components/schemas/Cuid"
+                    }
+                }
+            ],
+            "get": {
+                "summary": "Read authorized status",
+                "security": [
+                    {
+                        "ServiceApiKey": [],
+                        "PlatformAssertion": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Batch",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/BatchStatus"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Service error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Service error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Service error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Service error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "413": {
+                        "description": "Service error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "Service error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/prospecting/batches/{batchId}/jobs/{jobId}/results": {
+            "parameters": [
+                {
+                    "name": "batchId",
+                    "in": "path",
+                    "required": true,
+                    "schema": {
+                        "$ref": "#/components/schemas/Cuid"
+                    }
+                },
+                {
+                    "name": "jobId",
+                    "in": "path",
+                    "required": true,
+                    "schema": {
+                        "$ref": "#/components/schemas/Cuid"
+                    }
+                }
+            ],
+            "get": {
+                "summary": "results",
+                "security": [
+                    {
+                        "ServiceApiKey": [],
+                        "PlatformAssertion": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Success",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Results"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Service error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Service error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Service error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Service error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "Service error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "410": {
+                        "description": "Service error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "413": {
+                        "description": "Service error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "Service error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/prospecting/batches/{batchId}/jobs/{jobId}/export": {
+            "parameters": [
+                {
+                    "name": "batchId",
+                    "in": "path",
+                    "required": true,
+                    "schema": {
+                        "$ref": "#/components/schemas/Cuid"
+                    }
+                },
+                {
+                    "name": "jobId",
+                    "in": "path",
+                    "required": true,
+                    "schema": {
+                        "$ref": "#/components/schemas/Cuid"
+                    }
+                }
+            ],
+            "get": {
+                "summary": "export",
+                "security": [
+                    {
+                        "ServiceApiKey": [],
+                        "PlatformAssertion": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Download",
+                        "headers": {
+                            "Content-Disposition": {
+                                "schema": {
+                                    "type": "string"
+                                }
+                            }
+                        },
+                        "content": {
+                            "text/csv": {
+                                "schema": {
+                                    "type": "string",
+                                    "format": "binary"
+                                }
+                            },
+                            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": {
+                                "schema": {
+                                    "type": "string",
+                                    "format": "binary"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Service error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Service error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Service error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Service error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "Service error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "410": {
+                        "description": "Service error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "413": {
+                        "description": "Service error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "Service error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    }
+                },
+                "parameters": [
+                    {
+                        "name": "format",
+                        "in": "query",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "csv",
+                                "xlsx"
+                            ]
+                        }
+                    }
+                ]
+            }
+        },
+        "/api/v1/prospecting/batches/{batchId}/jobs/{jobId}/ack": {
+            "parameters": [
+                {
+                    "name": "batchId",
+                    "in": "path",
+                    "required": true,
+                    "schema": {
+                        "$ref": "#/components/schemas/Cuid"
+                    }
+                },
+                {
+                    "name": "jobId",
+                    "in": "path",
+                    "required": true,
+                    "schema": {
+                        "$ref": "#/components/schemas/Cuid"
+                    }
+                }
+            ],
+            "post": {
+                "summary": "ack",
+                "security": [
+                    {
+                        "ServiceApiKey": [],
+                        "PlatformAssertion": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Success",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Ack"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Service error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Service error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Service error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Service error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "Service error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "410": {
+                        "description": "Service error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "413": {
+                        "description": "Service error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "Service error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/prospecting/batches/{batchId}/jobs/{jobId}/purge": {
+            "parameters": [
+                {
+                    "name": "batchId",
+                    "in": "path",
+                    "required": true,
+                    "schema": {
+                        "$ref": "#/components/schemas/Cuid"
+                    }
+                },
+                {
+                    "name": "jobId",
+                    "in": "path",
+                    "required": true,
+                    "schema": {
+                        "$ref": "#/components/schemas/Cuid"
+                    }
+                }
+            ],
+            "post": {
+                "summary": "purge",
+                "security": [
+                    {
+                        "ServiceApiKey": [],
+                        "PlatformAssertion": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Success",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Purge"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Service error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Service error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Service error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Service error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "Service error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "413": {
+                        "description": "Service error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "Service error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/health/live": {
+            "get": {
+                "responses": {
+                    "200": {
+                        "description": "Live"
+                    }
+                }
+            }
+        },
+        "/health/ready": {
+            "get": {
+                "responses": {
+                    "200": {
+                        "description": "Ready"
+                    },
+                    "503": {
+                        "description": "Unavailable"
+                    }
+                }
+            }
+        }
+    },
+    "webhooks": {
+        "PlatformJobEvent": {
+            "post": {
+                "summary": "Outbound Platform callback",
+                "x-path": "/api/v1/internal/prospecting-batches/{batchId}/jobs/{jobId}/events",
+                "security": [
+                    {
+                        "CallbackApiKey": []
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/CallbackEvent"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "2XX": {
+                        "description": "Accepted"
+                    }
+                }
+            }
+        }
+    },
+    "components": {
+        "schemas": {
+            "Cuid": {
+                "type": "string",
+                "pattern": "^c[a-z0-9]{20,}$",
+                "maxLength": 128
+            },
+            "Query": {
+                "type": "object",
+                "properties": {
+                    "source": {
+                        "type": "string",
+                        "enum": [
+                            "google_maps"
+                        ]
+                    },
+                    "keyword": {
+                        "type": "string",
+                        "pattern": "\\S"
+                    },
+                    "location": {
+                        "type": "string",
+                        "pattern": "\\S"
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 150
+                    }
+                },
+                "required": [
+                    "source",
+                    "keyword",
+                    "location",
+                    "limit"
+                ],
+                "additionalProperties": false
+            },
+            "BatchRequest": {
+                "type": "object",
+                "properties": {
+                    "batchId": {
+                        "$ref": "#/components/schemas/Cuid"
+                    },
+                    "jobs": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "jobId": {
+                                    "$ref": "#/components/schemas/Cuid"
+                                },
+                                "query": {
+                                    "$ref": "#/components/schemas/Query"
+                                }
+                            },
+                            "required": [
+                                "jobId",
+                                "query"
+                            ],
+                            "additionalProperties": false
+                        },
+                        "minItems": 1,
+                        "maxItems": 5
+                    }
+                },
+                "required": [
+                    "batchId",
+                    "jobs"
+                ],
+                "additionalProperties": false
+            },
+            "Receipt": {
+                "type": "object",
+                "properties": {
+                    "success": {
+                        "const": true
+                    },
+                    "data": {
+                        "type": "object",
+                        "properties": {
+                            "batchId": {
+                                "$ref": "#/components/schemas/Cuid"
+                            },
+                            "jobIds": {
+                                "type": "array",
+                                "items": {
+                                    "$ref": "#/components/schemas/Cuid"
+                                },
+                                "minItems": 1,
+                                "maxItems": 5,
+                                "uniqueItems": true
+                            },
+                            "status": {
+                                "type": "string",
+                                "enum": [
+                                    "QUEUED"
+                                ]
+                            },
+                            "acceptedAt": {
+                                "type": "string",
+                                "format": "date-time"
+                            }
+                        },
+                        "required": [
+                            "batchId",
+                            "jobIds",
+                            "status",
+                            "acceptedAt"
+                        ],
+                        "additionalProperties": false
+                    },
+                    "meta": {
+                        "type": "object"
+                    }
+                },
+                "required": [
+                    "success",
+                    "data",
+                    "meta"
+                ],
+                "additionalProperties": false
+            },
+            "State": {
+                "type": "string",
+                "enum": [
+                    "QUEUED",
+                    "RUNNING",
+                    "AWAITING_RESULTS",
+                    "COMPLETED",
+                    "FAILED",
+                    "INTERRUPTED",
+                    "SKIPPED"
+                ]
+            },
+            "Quality": {
+                "type": "string",
+                "enum": [
+                    "SUCCESS",
+                    "SUCCESS_WITH_ISSUES",
+                    "PARTIAL"
+                ]
+            },
+            "Availability": {
+                "type": "string",
+                "enum": [
+                    "AVAILABLE",
+                    "EXPIRED",
+                    "PURGED",
+                    "UNAVAILABLE"
+                ]
+            },
+            "Error": {
+                "type": "object",
+                "properties": {
+                    "success": {
+                        "const": false
+                    },
+                    "error": {
+                        "type": "object",
+                        "properties": {
+                            "code": {
+                                "type": "string"
+                            },
+                            "message": {
+                                "type": "string"
+                            },
+                            "details": {
+                                "type": "object"
+                            },
+                            "timestamp": {
+                                "type": "string",
+                                "format": "date-time"
+                            }
+                        },
+                        "required": [
+                            "code",
+                            "message",
+                            "details",
+                            "timestamp"
+                        ],
+                        "additionalProperties": false
+                    }
+                },
+                "required": [
+                    "success",
+                    "error"
+                ],
+                "additionalProperties": false
+            },
+            "Progress": {
+                "oneOf": [
+                    {
+                        "type": "object",
+                        "properties": {
+                            "kind": {
+                                "type": "string",
+                                "enum": [
+                                    "stage_started",
+                                    "stage_completed"
+                                ]
+                            },
+                            "stage": {
+                                "type": "string"
+                            }
+                        },
+                        "required": [
+                            "kind",
+                            "stage"
+                        ],
+                        "additionalProperties": false
+                    },
+                    {
+                        "type": "object",
+                        "properties": {
+                            "kind": {
+                                "type": "string",
+                                "enum": [
+                                    "metric_updated"
+                                ]
+                            },
+                            "name": {
+                                "type": "string"
+                            },
+                            "value": {
+                                "type": "number"
+                            }
+                        },
+                        "required": [
+                            "kind",
+                            "name",
+                            "value"
+                        ],
+                        "additionalProperties": false
+                    }
+                ]
+            },
+            "BusinessResult": {
+                "type": "object",
+                "properties": {
+                    "name": {
+                        "type": "string"
+                    },
+                    "source": {
+                        "type": "string",
+                        "enum": [
+                            "google_maps"
+                        ]
+                    },
+                    "category": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ]
+                    },
+                    "address": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ]
+                    },
+                    "phone": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ]
+                    },
+                    "email": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ]
+                    },
+                    "website": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ]
+                    },
+                    "sourceIdentifier": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ]
+                    },
+                    "language": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ]
+                    },
+                    "metadata": {
+                        "anyOf": [
+                            {
+                                "type": "object"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ]
+                    }
+                },
+                "required": [
+                    "name",
+                    "source",
+                    "category",
+                    "address",
+                    "phone",
+                    "email",
+                    "website",
+                    "sourceIdentifier",
+                    "language",
+                    "metadata"
+                ],
+                "additionalProperties": false
+            },
+            "Results": {
+                "type": "object",
+                "properties": {
+                    "success": {
+                        "const": true
+                    },
+                    "data": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/BusinessResult"
+                        },
+                        "minItems": 0,
+                        "maxItems": 150
+                    },
+                    "meta": {
+                        "type": "object",
+                        "properties": {
+                            "snapshotId": {
+                                "type": "string",
+                                "format": "uuid"
+                            },
+                            "expiresAt": {
+                                "type": "string",
+                                "format": "date-time"
+                            }
+                        },
+                        "required": [
+                            "snapshotId",
+                            "expiresAt"
+                        ],
+                        "additionalProperties": false
+                    }
+                },
+                "required": [
+                    "success",
+                    "data",
+                    "meta"
+                ],
+                "additionalProperties": false
+            },
+            "Ack": {
+                "type": "object",
+                "properties": {
+                    "success": {
+                        "const": true
+                    },
+                    "data": {
+                        "type": "object",
+                        "properties": {
+                            "ackAt": {
+                                "type": "string",
+                                "format": "date-time"
+                            }
+                        },
+                        "required": [
+                            "ackAt"
+                        ],
+                        "additionalProperties": false
+                    },
+                    "meta": {
+                        "type": "object"
+                    }
+                },
+                "required": [
+                    "success",
+                    "data",
+                    "meta"
+                ],
+                "additionalProperties": false
+            },
+            "Purge": {
+                "type": "object",
+                "properties": {
+                    "success": {
+                        "const": true
+                    },
+                    "data": {
+                        "type": "object",
+                        "properties": {
+                            "availability": {
+                                "type": "string",
+                                "enum": [
+                                    "PURGED"
+                                ]
+                            }
+                        },
+                        "required": [
+                            "availability"
+                        ],
+                        "additionalProperties": false
+                    },
+                    "meta": {
+                        "type": "object"
+                    }
+                },
+                "required": [
+                    "success",
+                    "data",
+                    "meta"
+                ],
+                "additionalProperties": false
+            },
+            "BatchStatus": {
+                "type": "object",
+                "properties": {
+                    "success": {
+                        "const": true
+                    },
+                    "data": {
+                        "type": "object",
+                        "properties": {
+                            "batchId": {
+                                "$ref": "#/components/schemas/Cuid"
+                            },
+                            "acceptedAt": {
+                                "type": "string",
+                                "format": "date-time"
+                            },
+                            "active": {
+                                "type": "boolean"
+                            },
+                            "jobs": {
+                                "type": "array",
+                                "items": {
+                                    "type": "object",
+                                    "properties": {
+                                        "jobId": {
+                                            "$ref": "#/components/schemas/Cuid"
+                                        },
+                                        "queryIndex": {
+                                            "type": "integer",
+                                            "minimum": 0,
+                                            "maximum": 4
+                                        },
+                                        "status": {
+                                            "$ref": "#/components/schemas/State"
+                                        },
+                                        "updatedAt": {
+                                            "type": "string",
+                                            "format": "date-time"
+                                        },
+                                        "sequence": {
+                                            "type": "integer",
+                                            "minimum": 0
+                                        },
+                                        "availability": {
+                                            "anyOf": [
+                                                {
+                                                    "$ref": "#/components/schemas/Availability"
+                                                },
+                                                {
+                                                    "type": "null"
+                                                }
+                                            ]
+                                        },
+                                        "quality": {
+                                            "anyOf": [
+                                                {
+                                                    "$ref": "#/components/schemas/Quality"
+                                                },
+                                                {
+                                                    "type": "null"
+                                                }
+                                            ]
+                                        },
+                                        "ackAt": {
+                                            "anyOf": [
+                                                {
+                                                    "type": "string",
+                                                    "format": "date-time"
+                                                },
+                                                {
+                                                    "type": "null"
+                                                }
+                                            ]
+                                        },
+                                        "errorCode": {
+                                            "anyOf": [
+                                                {
+                                                    "type": "string"
+                                                },
+                                                {
+                                                    "type": "null"
+                                                }
+                                            ]
+                                        },
+                                        "snapshotId": {
+                                            "type": "string",
+                                            "format": "uuid"
+                                        },
+                                        "expiresAt": {
+                                            "type": "string",
+                                            "format": "date-time"
+                                        }
+                                    },
+                                    "required": [
+                                        "jobId",
+                                        "queryIndex",
+                                        "status",
+                                        "updatedAt",
+                                        "sequence",
+                                        "availability",
+                                        "quality",
+                                        "ackAt",
+                                        "errorCode"
+                                    ],
+                                    "additionalProperties": false
+                                },
+                                "minItems": 1,
+                                "maxItems": 5
+                            }
+                        },
+                        "required": [
+                            "batchId",
+                            "acceptedAt",
+                            "active",
+                            "jobs"
+                        ],
+                        "additionalProperties": false
+                    },
+                    "meta": {
+                        "type": "object"
+                    }
+                },
+                "required": [
+                    "success",
+                    "data",
+                    "meta"
+                ],
+                "additionalProperties": false
+            },
+            "CallbackEvent": {
+                "type": "object",
+                "properties": {
+                    "schemaVersion": {
+                        "type": "string",
+                        "enum": [
+                            "1.0"
+                        ]
+                    },
+                    "eventId": {
+                        "type": "string",
+                        "format": "uuid"
+                    },
+                    "batchId": {
+                        "$ref": "#/components/schemas/Cuid"
+                    },
+                    "jobId": {
+                        "$ref": "#/components/schemas/Cuid"
+                    },
+                    "queryIndex": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 4
+                    },
+                    "status": {
+                        "$ref": "#/components/schemas/State"
+                    },
+                    "sequence": {
+                        "type": "integer",
+                        "minimum": 1
+                    },
+                    "timestamp": {
+                        "type": "string",
+                        "format": "date-time"
+                    },
+                    "kind": {
+                        "type": "string",
+                        "enum": [
+                            "STATE_CHANGED",
+                            "PROGRESS",
+                            "TERMINAL",
+                            "RESULT_AVAILABILITY_CHANGED"
+                        ]
+                    },
+                    "progress": {
+                        "$ref": "#/components/schemas/Progress"
+                    },
+                    "quality": {
+                        "$ref": "#/components/schemas/Quality"
+                    },
+                    "snapshotId": {
+                        "type": "string",
+                        "format": "uuid"
+                    },
+                    "expiresAt": {
+                        "type": "string",
+                        "format": "date-time"
+                    },
+                    "availability": {
+                        "$ref": "#/components/schemas/Availability"
+                    },
+                    "error": {
+                        "type": "object",
+                        "properties": {
+                            "code": {
+                                "type": "string"
+                            },
+                            "message": {
+                                "type": "string"
+                            }
+                        },
+                        "required": [
+                            "code",
+                            "message"
+                        ],
+                        "additionalProperties": false
+                    }
+                },
+                "required": [
+                    "schemaVersion",
+                    "eventId",
+                    "batchId",
+                    "jobId",
+                    "queryIndex",
+                    "status",
+                    "sequence",
+                    "timestamp",
+                    "kind"
+                ],
+                "additionalProperties": false
+            }
+        },
+        "securitySchemes": {
+            "ServiceApiKey": {
+                "type": "apiKey",
+                "in": "header",
+                "name": "X-API-Key"
+            },
+            "PlatformAssertion": {
+                "type": "apiKey",
+                "in": "header",
+                "name": "X-Platform-Assertion"
+            },
+            "CallbackApiKey": {
+                "type": "apiKey",
+                "in": "header",
+                "name": "X-API-Key"
+            }
+        }
+    }
+}

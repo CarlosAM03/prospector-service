@@ -1,72 +1,114 @@
 import asyncio
-from urllib.parse import urlsplit
+import json
+import logging
+import ssl
+from collections import deque
+from uuid import uuid4
 
 import httpx
 
 from ..config import Settings
-from ..errors import ServiceError
-from ..schemas import JobEvent
+
+logger = logging.getLogger(__name__)
 
 
-class CallbackPolicy:
-    def __init__(self, settings: Settings):
-        self.origin = (settings.platform_callback_origin or "").rstrip("/")
-
-    def resolve(self, supplied: str, job_id: str) -> str:
-        path = f"/api/v1/internal/prospecting-jobs/{job_id}/events"
-        expected = self.origin + path
-        try:
-            parsed = urlsplit(supplied)
-            if (
-                not self.origin
-                or supplied not in {path, expected}
-                or parsed.query
-                or parsed.fragment
-                or parsed.username
-                or parsed.password
-            ):
-                raise ValueError("callback destination not allowed")
-        except ValueError as exc:
-            raise ServiceError(
-                400, "INVALID_CALLBACK_URL", "Callback must match the configured Platform Job URL"
-            ) from exc
-        return expected
-
-
-class CallbackClient:
-    def __init__(self, settings: Settings, *, transport: httpx.AsyncBaseTransport | None = None):
+class CallbackRelay:
+    def __init__(self, settings: Settings, transport: httpx.AsyncBaseTransport | None = None):
         self.settings = settings
         self.client = httpx.AsyncClient(
             timeout=settings.callback_timeout,
             follow_redirects=False,
             trust_env=False,
             transport=transport,
+            limits=httpx.Limits(max_connections=32),
+            verify=(
+                ssl.create_default_context(cafile=str(settings.platform_callback_ca_file))
+                if settings.platform_callback_ca_file
+                else True
+            ),
         )
+        self.pending = {}
+        self.tasks = set()
+        self.requests = asyncio.Semaphore(32)
+        self.missed = 0
 
-    async def send(self, url: str, event: JobEvent) -> bool:
-        url = CallbackPolicy(self.settings).resolve(url, event.jobId)
-        # Serialize once: every retry preserves UUID, sequence, timestamp and bytes.
-        payload = event.model_dump_json().encode("utf-8")
-        key = self.settings.callback_api_key
-        if key is None or not key.get_secret_value().strip():
-            return False
-        headers = {"X-API-Key": key.get_secret_value(), "Content-Type": "application/json"}
+    def offer(self, row, kind, *, progress=None, snapshot=None, timestamp=None):
+        if not self.settings.credentials_configured:
+            return
+        event = {
+            "schemaVersion": "1.0",
+            "eventId": str(uuid4()),
+            "batchId": row["batch_id"],
+            "jobId": row["id"],
+            "queryIndex": row["position"],
+            "sequence": row["sequence"],
+            "timestamp": timestamp or row["updated_at"],
+            "kind": kind,
+            "status": row["status"],
+        }
+        if progress:
+            event["progress"] = progress
+        if row["quality"]:
+            event["quality"] = row["quality"]
+        if row["availability"]:
+            event["availability"] = row["availability"]
+        if row["error"]:
+            event["error"] = {"code": row["error"], "message": "Execution or result unavailable"}
+        if snapshot:
+            event.update(snapshotId=snapshot.id, expiresAt=snapshot.expires_at.isoformat())
+        key = (row["batch_id"], row["id"])
+        pending = self.pending.get(key)
+        if pending is None:
+            if len(self.pending) >= self.settings.max_pending_callback_jobs:
+                self.missed += 1
+                return
+            pending = self.pending[key] = deque()
+            task = asyncio.create_task(self._dispatch(key, pending))
+            self.tasks.add(task)
+            task.add_done_callback(self.tasks.discard)
+        if pending and pending[-1][0] == "PROGRESS":
+            pending.pop()
+        pending.append((kind, json.dumps(event, separators=(",", ":")).encode()))
+
+    async def _dispatch(self, key, pending):
+        try:
+            while pending:
+                _, payload = pending.popleft()
+                if not await self._send(key, payload):
+                    self.missed += 1
+                    logger.warning("callback_delivery_failed")
+        finally:
+            del self.pending[key]
+
+    async def _send(self, key, payload):
+        batch_id, job_id = key
+        base = self.settings.platform_callback_origin.rstrip("/")
+        url = f"{base}/api/v1/internal/prospecting-batches/{batch_id}/jobs/{job_id}/events"
+        headers = {
+            "X-API-Key": self.settings.callback_api_key.get_secret_value(),
+            "Content-Type": "application/json",
+        }
         for attempt in range(self.settings.callback_max_attempts):
             try:
-                response = await self.client.post(url, content=payload, headers=headers)
-                if response.status_code == 200:
-                    try:
-                        return response.json().get("success") is True
-                    except (ValueError, AttributeError):
-                        return False
-                retry = response.status_code in {408, 429} or response.status_code >= 500
-                if not retry:
-                    return False
-            except (httpx.TimeoutException, httpx.NetworkError):
+                async with self.requests, asyncio.timeout(self.settings.callback_timeout):
+                    async with self.client.stream(
+                        "POST", url, content=payload, headers=headers
+                    ) as res:
+                        status = res.status_code
+                        if 200 <= status < 300:
+                            return True
+                        if status not in {408, 429} and status < 500:
+                            return False
+            except (httpx.TransportError, TimeoutError):
                 pass
             if attempt + 1 < self.settings.callback_max_attempts:
-                await asyncio.sleep(self.settings.callback_backoff * (2**attempt))
+                await asyncio.sleep(self.settings.callback_backoff * 2**attempt)
         return False
 
-    async def close(self) -> None:
+    async def close(self):
+        if self.tasks:
+            _, pending = await asyncio.wait(self.tasks, timeout=3)
+            for task in pending:
+                task.cancel()
+            await asyncio.gather(*pending, return_exceptions=True)
         await self.client.aclose()

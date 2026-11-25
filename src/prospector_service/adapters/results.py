@@ -1,3 +1,5 @@
+from collections.abc import Sequence
+
 from prospector_engine import SearchResult, Source, VerificationState
 from pydantic import ValidationError
 
@@ -5,14 +7,19 @@ from ..errors import EngineExecutionError
 from ..schemas import BusinessResult, ProspectingQuery
 
 
-def map_results(result: SearchResult, query: ProspectingQuery) -> tuple[BusinessResult, ...]:
+def map_results(
+    result: SearchResult, query: ProspectingQuery, indices: Sequence[int] | None = None
+) -> tuple[BusinessResult, ...]:
     expected = (query.source, query.keyword, query.location)
     actual = (result.query.source.value, result.query.keyword, result.query.location)
     if actual != expected or len(result.businesses) != len(result.source_identities):
         raise EngineExecutionError("RESULT_MAPPING_FAILED")
+    selection = range(len(result.businesses)) if indices is None else indices
     try:
         rows = []
-        for business, evidence in zip(result.businesses, result.source_identities, strict=True):
+        for index in selection:
+            business = result.businesses[index]
+            evidence = result.source_identities[index]
             verified = evidence.verified
             identifier = None
             if (
@@ -33,9 +40,8 @@ def map_results(result: SearchResult, query: ProspectingQuery) -> tuple[Business
                     language=business.language,
                     source=query.source,
                     sourceIdentifier=identifier,
-                    metadata=None,
                 )
             )
         return tuple(rows)
-    except (ValidationError, ValueError, AttributeError) as exc:
+    except (ValidationError, ValueError, AttributeError, IndexError) as exc:
         raise EngineExecutionError("RESULT_MAPPING_FAILED") from exc

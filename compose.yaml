@@ -1,0 +1,72 @@
+services:
+  service:
+    build: .
+    image: ${SERVICE_IMAGE:-prospector-service:local}
+    init: true
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    environment:
+      APP_ENV: production
+      HOST: 0.0.0.0
+      METADATA_PATH: /var/lib/prospector/metadata.sqlite3
+      WORKER_TEMP_DIR: /run/prospector-tmp
+      PROSPECTOR_CHROMIUM_SANDBOX: "${PROSPECTOR_CHROMIUM_SANDBOX:-1}"
+      SOLUTION_ID: ${SOLUTION_ID:?configure SOLUTION_ID}
+      ASSERTION_ISSUER: ${ASSERTION_ISSUER:?configure ASSERTION_ISSUER}
+      ASSERTION_AUDIENCE: ${ASSERTION_AUDIENCE:-prospector-service/v1}
+      PLATFORM_CALLBACK_ORIGIN: ${PLATFORM_CALLBACK_ORIGIN:?configure HTTPS origin}
+      INTERNAL_API_KEY_FILE: /run/secrets/service_key
+      ASSERTION_KEY_FILE: /run/secrets/assertion_key
+      METADATA_KEY_FILE: /run/secrets/metadata_key
+      CALLBACK_API_KEY_FILE: /run/secrets/callback_key
+      MAX_SNAPSHOT_BYTES: ${MAX_SNAPSHOT_BYTES:-1048576}
+      SNAPSHOT_BUDGET_BYTES: ${SNAPSHOT_BUDGET_BYTES:-134217728}
+      MAX_SNAPSHOTS: ${MAX_SNAPSHOTS:-2048}
+      IPC_MAX_BYTES: ${IPC_MAX_BYTES:-8388608}
+      EXPORT_CONCURRENCY: ${EXPORT_CONCURRENCY:-4}
+      MAX_EXPORT_BYTES: ${MAX_EXPORT_BYTES:-4194304}
+    secrets: [service_key, assertion_key, metadata_key, callback_key]
+    volumes: [metadata:/var/lib/prospector]
+    tmpfs:
+      - /tmp:size=64m,uid=10001,gid=10001,mode=0700
+      - /run/prospector-tmp:size=${WORKER_TMPFS_BYTES:-536870912},uid=10001,gid=10001,mode=0700
+    shm_size: ${SERVICE_SHM_SIZE:-1g}
+    mem_limit: ${SERVICE_MEMORY_LIMIT:-4g}
+    memswap_limit: ${SERVICE_MEMORY_LIMIT:-4g}
+    cpus: ${SERVICE_CPUS:-4}
+    pids_limit: ${SERVICE_PIDS_LIMIT:-1024}
+    ulimits:
+      nofile: {soft: 16384, hard: 16384}
+      core: 0
+    stop_grace_period: 80s
+    networks: [upstream, egress]
+  nginx:
+    image: ${NGINX_IMAGE:-nginxinc/nginx-unprivileged:1.28-alpine}
+    entrypoint: ["nginx", "-g", "daemon off;"]
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    ports: ["${LISTEN_IP:-127.0.0.1}:${HTTPS_PORT:-8443}:8443"]
+    volumes:
+      - ./deploy/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ${PLATFORM_ALLOWLIST_FILE:?configure Platform allowlist}:/etc/nginx/platform-allow.conf:ro
+    secrets: [tls_crt, tls_key]
+    tmpfs: ["/tmp:size=32m,uid=101,gid=101,mode=0700"]
+    pids_limit: 64
+    depends_on:
+      service: {condition: service_healthy}
+    networks: [upstream, ingress]
+networks:
+  upstream: {internal: true}
+  ingress: {}
+  egress: {}
+volumes:
+  metadata: {}
+secrets:
+  service_key: {file: "${SERVICE_API_KEY_FILE:?configure service API key file}"}
+  assertion_key: {file: "${PLATFORM_ASSERTION_KEY_FILE:?configure Platform assertion key file}"}
+  metadata_key: {file: "${SQLITE_HMAC_KEY_FILE:?configure metadata HMAC key file}"}
+  callback_key: {file: "${CALLBACK_API_KEY_FILE:?configure callback key file}"}
+  tls_crt: {file: "${TLS_CERT_FILE:?configure TLS certificate file}"}
+  tls_key: {file: "${TLS_KEY_FILE:?configure TLS key file}"}

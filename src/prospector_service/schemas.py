@@ -1,7 +1,5 @@
 from datetime import datetime, timezone
-from enum import Enum
 from typing import Annotated, Literal
-from uuid import UUID
 
 from email_validator import validate_email
 from pydantic import (
@@ -16,7 +14,7 @@ from pydantic import (
     model_validator,
 )
 
-Cuid = Annotated[StrictStr, Field(pattern=r"^c[a-z0-9]{20,}$")]
+Cuid = Annotated[StrictStr, Field(pattern=r"^c[a-z0-9]{20,}$", max_length=128)]
 
 
 def utc_now() -> datetime:
@@ -24,36 +22,45 @@ def utc_now() -> datetime:
 
 
 class DTO(BaseModel):
-    model_config = ConfigDict(frozen=True, extra="ignore")
+    model_config = ConfigDict(frozen=True, extra="forbid")
 
 
 class ProspectingQuery(DTO):
     keyword: StrictStr
     location: StrictStr
     source: Literal["google_maps"]
-    limit: Annotated[StrictInt, Field(ge=1, le=100)]
+    limit: Annotated[StrictInt, Field(ge=1, le=150)]
 
     @field_validator("keyword", "location")
     @classmethod
     def nonblank(cls, value: str) -> str:
-        if not value.strip():
-            raise ValueError("query text must not be blank")
+        if not value.strip() or any(ord(char) < 32 or ord(char) == 127 for char in value):
+            raise ValueError("invalid query text")
+        value.encode("utf-8")
         return value
 
 
-class StartJobRequest(DTO):
+class JobRequest(DTO):
     jobId: Cuid
-    tenantId: Cuid
     query: ProspectingQuery
-    callbackUrl: StrictStr
 
 
-class JobStatus(str, Enum):
-    QUEUED = "QUEUED"
-    RUNNING = "RUNNING"
-    COMPLETED = "COMPLETED"
-    FAILED = "FAILED"
-    CANCELLED = "CANCELLED"
+class BatchRequest(DTO):
+    batchId: Cuid
+    jobs: Annotated[tuple[JobRequest, ...], Field(min_length=1, max_length=5)]
+
+    @model_validator(mode="after")
+    def unique_ids(self):
+        if len({job.jobId for job in self.jobs}) != len(self.jobs):
+            raise ValueError("duplicate job IDs")
+        return self
+
+
+class AcceptedBatch(DTO):
+    batchId: Cuid
+    jobIds: Annotated[tuple[Cuid, ...], Field(min_length=1, max_length=5)]
+    status: Literal["QUEUED"] = "QUEUED"
+    acceptedAt: AwareDatetime
 
 
 class BusinessResult(DTO):
@@ -72,7 +79,6 @@ class BusinessResult(DTO):
     @classmethod
     def valid_email(cls, value):
         if value is not None:
-            # Syntax only, no DNS. Preserve Engine's string rather than normalizing again.
             validate_email(value, check_deliverability=False, test_environment=True)
         return value
 
@@ -82,51 +88,6 @@ class BusinessResult(DTO):
         if value is not None:
             AnyHttpUrl(value)
         return value
-
-
-class PipelineProgress(DTO):
-    source: Literal["google_maps"]
-    stage: StrictStr
-    message: StrictStr
-    percentage: float = Field(ge=0, le=100, allow_inf_nan=False)
-
-
-class JobEventError(DTO):
-    code: str
-    message: str
-
-
-class JobEvent(DTO):
-    eventId: UUID
-    jobId: Cuid
-    sequence: int = Field(ge=1)
-    status: JobStatus
-    progress: PipelineProgress | None
-    timestamp: AwareDatetime
-    results: tuple[BusinessResult, ...] | None
-    error: JobEventError | None
-
-    @model_validator(mode="after")
-    def lifecycle_payload(self):
-        if (self.status is JobStatus.COMPLETED) != (self.results is not None):
-            raise ValueError("only COMPLETED events contain results (including empty results)")
-        if (self.status is JobStatus.FAILED) != (self.error is not None):
-            raise ValueError("only FAILED events contain error")
-        if self.timestamp.utcoffset().total_seconds() != 0:
-            raise ValueError("timestamp must be UTC")
-        return self
-
-
-class AcceptedJob(DTO):
-    jobId: Cuid
-    status: Literal["QUEUED"] = "QUEUED"
-    acceptedAt: AwareDatetime
-
-
-class AcceptedJobResponse(DTO):
-    success: Literal[True] = True
-    data: AcceptedJob
-    meta: dict = Field(default_factory=dict)
 
 
 class ErrorBody(DTO):

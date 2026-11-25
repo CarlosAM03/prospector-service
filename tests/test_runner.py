@@ -1,0 +1,78 @@
+import asyncio
+import sys
+from collections import Counter
+
+import pytest
+
+from prospector_service import runner as runtime
+from prospector_service.runner import ProcessRunner
+
+from .conftest import batch, post, session, status, until
+
+pytestmark = [
+    pytest.mark.integration,
+    pytest.mark.skipif(
+        sys.platform != "linux", reason="ProcessRunner and pidfd supervision target Linux"
+    ),
+]
+
+
+class FakeProcessRunner(ProcessRunner):
+    def __init__(self, settings, gate):
+        super().__init__(settings)
+        self.gate = gate
+
+    def command(self):
+        return (
+            sys.executable,
+            "-m",
+            "tests.fake_worker",
+            str(self.settings.ipc_max_bytes),
+            str(self.gate),
+        )
+
+
+async def test_25_isolated_linux_workers(settings, tmp_path):
+    gate = tmp_path / "start"
+    runner = FakeProcessRunner(settings, gate)
+    if not runner.supported:
+        pytest.skip("host cannot verify process cleanup")
+    async with session(settings, runner) as (client, coord, _):
+        fixtures = [(batch(i + 1), i // 5 + 1, i % 5 + 1) for i in range(25)]
+        responses = await asyncio.gather(
+            *(
+                post(client, settings, item, tenant=tenant, owner=owner)
+                for item, tenant, owner in fixtures
+            )
+        )
+        assert all(response.status_code == 202 for response in responses)
+
+        def counts():
+            return Counter(
+                dict(coord.store.db.execute("SELECT status, count(*) FROM jobs GROUP BY status"))
+            )
+
+        try:
+            await until(lambda: counts()["RUNNING"] == 25, timeout=35)
+            assert counts() == {"RUNNING": 25, "QUEUED": 100}
+            assert (await client.get("/health/ready")).status_code == 200
+        finally:
+            gate.touch()
+        await until(lambda: not coord.lanes, timeout=35)
+        assert not coord.unsafe
+        assert counts() == {"COMPLETED": 125}
+
+
+async def test_worker_timeout_cooperative_and_verified(settings, tmp_path, monkeypatch):
+    runner = FakeProcessRunner(settings, tmp_path / "never-start")
+    if not runner.supported:
+        pytest.skip("host cannot verify process cleanup")
+    monkeypatch.setattr(runtime, "RUN_TIMEOUT", 0.3)
+    payload = batch(count=2)
+    async with session(settings, runner) as (client, coord, _):
+        assert (await post(client, settings, payload)).status_code == 202
+        await until(lambda: not coord.lanes, timeout=20)
+        state = (await status(client, settings, payload)).json()["data"]
+        assert [job["status"] for job in state["jobs"]] == ["INTERRUPTED", "SKIPPED"]
+        assert state["jobs"][0]["errorCode"] == "BATCH_TIMEOUT"
+        assert not state["active"] and not coord.unsafe

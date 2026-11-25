@@ -16,9 +16,11 @@ RUN python -m pip install --no-cache-dir --no-index --no-deps /wheels/*.whl \
     && python -m playwright install --with-deps chromium \
     && rm -rf /var/lib/apt/lists/* /wheels \
     && useradd --create-home --uid 10001 service \
+    && install -d -m 0700 -o 10001 -g 10001 /var/lib/prospector /run/prospector-tmp \
     && chmod -R a+rX /opt/playwright
+ENV METADATA_PATH=/var/lib/prospector/metadata.sqlite3 WORKER_TEMP_DIR=/dev/shm
 USER 10001:10001
 WORKDIR /home/service
 EXPOSE 8000
-HEALTHCHECK --interval=30s --timeout=3s --start-period=30s CMD python -c "import os,urllib.request; urllib.request.urlopen('http://127.0.0.1:'+os.environ.get('PORT','8000')+'/health/live',timeout=2)"
+HEALTHCHECK --interval=30s --timeout=3s --start-period=30s CMD python -c "import os,urllib.request; urllib.request.urlopen('http://127.0.0.1:'+os.environ.get('PORT','8000')+'/health/ready',timeout=2)"
 CMD ["python", "-m", "prospector_service"]

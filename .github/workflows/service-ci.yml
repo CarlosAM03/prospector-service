@@ -84,3 +84,4 @@ jobs:
           python-version: '3.11'
       - run: docker build -t prospector-service:ci .
       - run: python scripts/container_smoke.py --image prospector-service:ci
+      - run: python scripts/nginx_smoke.py --image prospector-service:ci

@@ -47,7 +47,7 @@ for package in (prospector_service, prospector_engine, prospector_export):
     assert Path(package.__file__).is_relative_to(Path(sys.prefix))
 assert ProspectorEngine(EngineConfig()).config.limit == 50
 try:
-    ProspectorEngine(EngineConfig(limit=101)).search(SearchQuery(Source.GOOGLE_MAPS, 'cafe', 'TJ'))
+    ProspectorEngine(EngineConfig(limit=151)).search(SearchQuery(Source.GOOGLE_MAPS, 'cafe', 'TJ'))
 except ProspectorConfigurationError:
     pass
 else:

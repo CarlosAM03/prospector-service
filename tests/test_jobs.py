@@ -1,113 +1,101 @@
 import asyncio
-import threading
+from collections import Counter
+from dataclasses import replace
 
-import httpx
-import pytest
-
-from prospector_service.adapters.callbacks import CallbackClient
-from prospector_service.errors import EngineExecutionError
-from prospector_service.jobs import JobService
-from prospector_service.schemas import BusinessResult, JobStatus, StartJobRequest
-
-from .conftest import FakeEngine, another
+from .conftest import FakeRunner, batch, post, session, status, until
 
 
-@pytest.mark.parametrize(
-    "failure,expected",
-    [
-        (EngineExecutionError("ENGINE_EXTRACTION_FAILED"), "ENGINE_EXTRACTION_FAILED"),
-        (RuntimeError("unsafe"), "ENGINE_UNEXPECTED_ERROR"),
-    ],
-)
-async def test_failure_does_not_kill_worker(settings, payload, callbacks, failure, expected):
-    engine = FakeEngine(failure=failure)
-    service = JobService(settings, engine, CallbackClient(settings, transport=callbacks[1]))
-    await service.start()
-    try:
-        await service.accept(StartJobRequest(**payload))
-        await asyncio.wait_for(service.queue.join(), 3)
-        first = service.registry[payload["jobId"]]
-        assert first.status is JobStatus.FAILED
-        assert first.events[-1].error.code == expected
-        engine.failure = None
-        second = another(payload, 3)
-        await service.accept(StartJobRequest(**second))
-        await asyncio.wait_for(service.queue.join(), 3)
-        assert service.registry[second["jobId"]].status is JobStatus.COMPLETED
-        assert not service.worker.done()
-    finally:
-        await service.stop()
+async def test_25_concurrent_lanes_and_maximum_queue(settings):
+    runner = FakeRunner(blocked=True, crash=True)
+    fixtures = [
+        (batch(number), (number - 1) // 5 + 1, (number - 1) % 5 + 1) for number in range(1, 26)
+    ]
+    async with session(settings, runner) as (client, coord, _):
+        responses = await asyncio.gather(
+            *(
+                post(client, settings, item, tenant=tenant, owner=owner)
+                for item, tenant, owner in fixtures
+            )
+        )
+        assert [response.status_code for response in responses] == [202] * 25
+        await until(lambda: len(runner.order) == 25)
+        states = Counter(
+            {
+                row[0]: row[1]
+                for row in coord.store.db.execute(
+                    "SELECT status, count(*) FROM jobs GROUP BY status"
+                )
+            }
+        )
+        assert states == {"RUNNING": 25, "QUEUED": 100}
+        assert (await client.get("/health/ready")).status_code == 200
+        for tenant, owner in ((6, 1), (1, 6)):
+            assert (
+                await post(client, settings, batch(50), tenant=tenant, owner=owner)
+            ).status_code == 429
+        runner.release.set()
+        await until(lambda: not coord.lanes, timeout=10)
+        for item, tenant, owner in fixtures:
+            state = (await status(client, settings, item, tenant=tenant, owner=owner)).json()[
+                "data"
+            ]
+            actual = [i for bid, i in runner.order if bid == item["batchId"]]
+            if item == fixtures[0][0]:
+                assert actual == [0]
+                assert [job["status"] for job in state["jobs"]] == ["INTERRUPTED"] + ["SKIPPED"] * 4
+            else:
+                assert actual == [0, 1, 2, 3, 4]
+                assert all(job["status"] == "COMPLETED" for job in state["jobs"])
 
 
-async def test_serial_thread_execution_and_job_isolation(settings, payload, callbacks):
-    engine = FakeEngine()
-    service = JobService(settings, engine, CallbackClient(settings, transport=callbacks[1]))
-    loop_thread = threading.get_ident()
-    await service.start()
-    try:
-        first, second = payload, another(payload, 3)
-        second["tenantId"] = "c" + "8" * 24
-        await service.accept(StartJobRequest(**first))
-        await service.accept(StartJobRequest(**second))
-        await asyncio.wait_for(service.queue.join(), 3)
-        assert len(set(engine.threads)) == 1 and engine.threads[0] != loop_thread
-        for body in (first, second):
-            job = service.registry[body["jobId"]]
-            assert [e.sequence for e in job.events] == [1, 2, 3]
-            assert all(e.jobId == body["jobId"] for e in job.events)
-        assert service.lookup(first["jobId"], second["tenantId"]) is None
-    finally:
-        await service.stop()
+async def test_mixed_batch_sizes_replay_race_and_duplicate_id_rollback(settings):
+    runner = FakeRunner(blocked=True)
+    async with session(settings, runner) as (client, coord, _):
+        payloads = [batch(n, count=n) for n in range(1, 6)]
+        responses = await asyncio.gather(
+            *(post(client, settings, p, owner=i + 1) for i, p in enumerate(payloads)),
+            post(client, settings, payloads[0]),
+        )
+        assert all(res.status_code == 202 for res in responses)
+        assert responses[0].json() == responses[-1].json()
+        await until(lambda: len(runner.calls) == 5)
+        assert coord.store.db.execute("SELECT count(*) FROM jobs").fetchone()[0] == 15
+        runner.release.set()
+        await until(lambda: not coord.lanes)
+        collisions = batch(8, count=2)
+        collisions["jobs"][1]["jobId"] = payloads[0]["jobs"][0]["jobId"]
+        assert (await post(client, settings, collisions)).status_code == 409
+        assert coord.store.db.execute("SELECT count(*) FROM jobs").fetchone()[0] == 15
 
 
-async def test_callback_failure_does_not_corrupt_engine_outcome(settings, payload):
-    callback = CallbackClient(
-        settings, transport=httpx.MockTransport(lambda r: httpx.Response(503))
+async def test_unverified_worker_cleanup_reserves_lane(settings):
+    async with session(settings, FakeRunner(crash=True, clean=False)) as (client, coord, _):
+        payload = batch(count=1)
+        assert (await post(client, settings, payload)).status_code == 202
+        await until(lambda: not coord.lanes)
+        assert (await status(client, settings, payload)).json()["data"]["active"] is True
+        assert (await client.get("/health/ready")).status_code == 503
+        assert (await post(client, settings, batch(2), owner=2)).status_code == 503
+    async with session(settings) as (client, coord, _):
+        assert (await client.get("/health/ready")).status_code == 503
+        assert (await post(client, settings, payload)).status_code == 202
+        assert not coord.lanes
+
+
+async def test_snapshot_budget_does_not_evict_retained_snapshot(settings):
+    configured = settings.model_copy(
+        update={"snapshot_budget_bytes": 1024, "max_snapshot_bytes": 1024}
     )
-    service = JobService(settings, FakeEngine(), callback)
-    await service.start()
-    try:
-        await service.accept(StartJobRequest(**payload))
-        await asyncio.wait_for(service.queue.join(), 3)
-        job = service.registry[payload["jobId"]]
-        assert job.status is JobStatus.COMPLETED and job.callback_failures == 3
-    finally:
-        await service.stop()
-
-
-async def test_runtime_failure_disables_new_acceptance(settings, payload, callbacks):
-    engine = FakeEngine(
-        failure=EngineExecutionError("ENGINE_RUNTIME_UNAVAILABLE", runtime_unavailable=True)
-    )
-    service = JobService(settings, engine, CallbackClient(settings, transport=callbacks[1]))
-    await service.start()
-    try:
-        await service.accept(StartJobRequest(**payload))
-        await asyncio.wait_for(service.queue.join(), 3)
-        assert not service.readiness()["engine_browser_startup_probe"]
-    finally:
-        await service.stop()
-
-
-@pytest.mark.parametrize(
-    "records",
-    [
-        tuple(BusinessResult(name=str(i), source="google_maps") for i in range(3)),
-        (BusinessResult(name="x" * 2048, source="google_maps"),),
-    ],
-)
-async def test_result_limits_are_not_silently_truncated(settings, payload, callbacks, records):
-    settings = settings.model_copy(update={"max_result_bytes": 1024})
-    service = JobService(
-        settings, FakeEngine(result=records), CallbackClient(settings, transport=callbacks[1])
-    )
-    await service.start()
-    try:
-        await service.accept(StartJobRequest(**payload))
-        await asyncio.wait_for(service.queue.join(), 3)
-        job = service.registry[payload["jobId"]]
-        assert job.status is JobStatus.FAILED
-        assert job.events[-1].error.code == "RESULT_LIMIT_EXCEEDED"
-        assert job.results is None
-    finally:
-        await service.stop()
+    runner = FakeRunner(rows=[{"name": "x" * 630, "source": "google_maps"}])
+    async with session(configured, runner) as (client, coord, _):
+        payload = batch(count=2)
+        assert (await post(client, configured, payload)).status_code == 202
+        await until(lambda: not coord.lanes)
+        state = (await status(client, configured, payload)).json()["data"]
+        assert [row["availability"] for row in state["jobs"]] == ["AVAILABLE", "UNAVAILABLE"]
+        retained = next(iter(coord.snapshots.items.values()))
+        assert coord.snapshots.total == len(retained.data)
+        coord.snapshots.items[next(iter(coord.snapshots.items))] = replace(retained, deadline=0)
+        state = (await status(client, configured, payload)).json()["data"]
+        assert state["jobs"][0]["availability"] == "EXPIRED"
+        assert coord.snapshots.total == 0

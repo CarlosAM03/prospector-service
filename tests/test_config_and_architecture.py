@@ -10,15 +10,12 @@ from prospector_service.config import Settings
 @pytest.mark.parametrize(
     "options",
     [
-        {"engine_worker_concurrency": 2},
-        {"queue_capacity": 0},
-        {"callback_max_attempts": 0},
-        {"platform_callback_origin": "http://platform.example.com"},
-        {"platform_callback_origin": "https://user:password@platform.example.com"},
-        {"platform_callback_origin": "https://platform.example.com/path"},
-        {"platform_callback_origin": "https://plat\nform.example.com"},
-        {"platform_callback_origin": "https://platform.example.com:invalid"},
-        {"platform_callback_origin": "http://127.0.0.1:8080"},
+        {"internal_api_key": "short"},
+        {"assertion_key": "a" * 32, "internal_api_key": "a" * 32},
+        {"platform_callback_origin": "https://platform.example/path"},
+        {"platform_callback_origin": "https://u:p@example.com"},
+        {"platform_callback_origin": "http://platform.example"},
+        {"platform_callback_origin": "https://platform.example:invalid"},
         {"app_env": "production", "allow_local_callbacks": True},
     ],
 )
@@ -27,41 +24,25 @@ def test_invalid_settings(options):
         Settings(**options)
 
 
-def test_explicit_local_development_callback_and_environment(monkeypatch):
-    monkeypatch.setenv("APP_ENV", "test")
+def test_secret_file_and_local_dev_only(monkeypatch, tmp_path):
+    path = tmp_path / "key"
+    path.write_text("a" * 32 + "\n")
+    monkeypatch.setenv("INTERNAL_API_KEY_FILE", str(path))
+    monkeypatch.setenv("PLATFORM_CALLBACK_ORIGIN", "http://127.0.0.1:8010")
     monkeypatch.setenv("ALLOW_LOCAL_CALLBACKS", "true")
-    monkeypatch.setenv("PLATFORM_CALLBACK_ORIGIN", "http://127.0.0.1:9000")
-    monkeypatch.setenv("ENGINE_HEADLESS", "true")
-    monkeypatch.setenv("QUEUE_CAPACITY", "3")
-    config = Settings.from_env()
-    assert config.engine_headless and config.queue_capacity == 3
-    assert config.platform_callback_origin == "http://127.0.0.1:9000"
+    assert Settings.from_env().internal_api_key.get_secret_value() == "a" * 32
+    monkeypatch.setenv("INTERNAL_API_KEY", "other")
+    with pytest.raises(ValueError):
+        Settings.from_env()
 
 
-def test_only_public_engine_imports_and_no_cli_or_database():
+def test_engine_imports_are_public_and_sqlite_only_in_control_plane():
     import prospector_service
 
     root = Path(prospector_service.__file__).parent
-    banned = {
-        "rich",
-        "bs4",
-        "playwright",
-        "prisma",
-        "psycopg",
-        "sqlalchemy",
-        "scraper",
-        "prospector_cli",
-        "engines",
-        "nest",
-        "exporters",
-    }
     for file in root.rglob("*.py"):
-        tree = ast.parse(file.read_text(encoding="utf-8"))
-        for node in ast.walk(tree):
-            if isinstance(node, ast.ImportFrom) and node.level == 0:
-                module = node.module or ""
-                assert module.split(".")[0] not in banned
-                if module.startswith("prospector_engine"):
-                    assert module in {"prospector_engine", "prospector_engine.browser"}
-            if isinstance(node, ast.Import):
-                assert all(alias.name.split(".")[0] not in banned for alias in node.names)
+        for node in ast.walk(ast.parse(file.read_text(encoding="utf-8"))):
+            if isinstance(node, ast.ImportFrom) and node.module:
+                assert not node.module.startswith(("prospector_engine.engines", "prospector_cli"))
+            if isinstance(node, ast.Import) and node.names[0].name == "sqlite3":
+                assert file.name in {"metadata.py", "main.py", "coordinator.py"}

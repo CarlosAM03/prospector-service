@@ -233,5 +233,6 @@ def settings(tmp_path):
         callback_api_key="d" * 32,
         platform_callback_origin="https://platform.example.com",
         callback_backoff=0,
+        max_active_batches=25,
         metadata_path=tmp_path / "metadata.sqlite3",
     )

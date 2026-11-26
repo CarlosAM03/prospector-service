@@ -145,6 +145,8 @@ def main():
                 "-e",
                 "APP_ENV=test",
                 "-e",
+                "MAX_ACTIVE_BATCHES=25",
+                "-e",
                 f"INTERNAL_API_KEY={'a' * 32}",
                 "-e",
                 f"ASSERTION_KEY={'b' * 32}",

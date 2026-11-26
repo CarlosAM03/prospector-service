@@ -195,6 +195,7 @@ async def wave(lanes, directory, *, protected):
         metadata_path=directory / f"{lanes}.sqlite3",
         worker_temp_dir=Path("/tmp" if protected else "/dev/shm"),
         prospector_chromium_sandbox="1" if protected else "0",
+        max_active_batches=lanes,
         internal_api_key="a" * 32,
         assertion_key="b" * 32,
         metadata_key="c" * 32,

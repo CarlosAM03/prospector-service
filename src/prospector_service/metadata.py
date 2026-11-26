@@ -104,7 +104,15 @@ class Metadata:
         finally:
             self.lock.close()
 
-    def admit(self, actor: Actor, batch: BatchRequest, key: str, body: bytes, ready: bool):
+    def admit(
+        self,
+        actor: Actor,
+        batch: BatchRequest,
+        key: str,
+        body: bytes,
+        ready: bool,
+        max_active_batches: int = 1,
+    ):
         now = utc_now()
         timestamp = now.isoformat()
         idem = hmac.digest(self.key, b"idempotency\0" + key.encode(), "sha256")
@@ -127,6 +135,8 @@ class Metadata:
             ).fetchall()
             if any((row["tenant"], row["owner"]) == scope[1:] for row in active):
                 raise ServiceError(409, "ACTIVE_BATCH", "User already has an active batch")
+            if len(active) >= max_active_batches:
+                raise ServiceError(429, "QUOTA_EXCEEDED", "Active batch quota exceeded")
             tenants = {row["tenant"] for row in active}
             if (actor.tenant not in tenants and len(tenants) >= 5) or sum(
                 row["tenant"] == actor.tenant for row in active

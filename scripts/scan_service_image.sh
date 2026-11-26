@@ -31,11 +31,21 @@ total = collections.Counter()
 affected = collections.Counter()
 high_packages = collections.Counter()
 triage = []
+review = []
 for result in report.get("Results") or []:
     for item in result.get("Vulnerabilities") or []:
         severity = item["Severity"]
         total[severity] += 1
         affected[result["Type"]] += 1
+        review.append({
+            "id": item["VulnerabilityID"],
+            "component": item["PkgName"],
+            "ecosystem": result["Type"],
+            "installed": item["InstalledVersion"],
+            "fixed": item.get("FixedVersion"),
+            "severity": severity,
+            "disposition": "REVIEW_REQUIRED",
+        })
         if severity in {"HIGH", "CRITICAL"}:
             high_packages[(result["Type"], item["PkgName"], severity)] += 1
         if severity == "CRITICAL" or result["Type"] == "python-pkg":
@@ -52,6 +62,9 @@ for result in report.get("Results") or []:
 secret_report = json.loads(Path(sys.argv[2]).read_text())
 secret_matches = sum(len(row.get("Secrets") or []) for row in secret_report.get("Results") or [])
 sbom = json.loads((output / "sbom.cdx.json").read_text())
+(output / "vulnerability-review.json").write_text(
+    json.dumps({"image_id": report["Metadata"]["ImageID"], "items": review}, indent=2) + "\n"
+)
 summary = {
     "scanner": "Trivy 0.76.2",
     "image_id": report["Metadata"]["ImageID"],

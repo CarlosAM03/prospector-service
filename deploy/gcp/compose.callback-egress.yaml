@@ -1,0 +1,12 @@
+# Apply after the corresponding host firewall policy is installed and verified.
+services:
+  service:
+    dns: [127.0.0.1]
+    extra_hosts:
+      - "${PLATFORM_CALLBACK_HOST:?configure the callback hostname}=${PLATFORM_CALLBACK_IPV4:?configure the verified public IPv4}"
+networks:
+  egress:
+    internal: false
+    enable_ipv6: false
+    driver_opts:
+      com.docker.network.bridge.name: prsvc-egress0

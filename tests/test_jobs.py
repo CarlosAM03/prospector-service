@@ -5,6 +5,28 @@ from dataclasses import replace
 from .conftest import FakeRunner, batch, post, session, status, until
 
 
+async def test_operational_lane_cap_is_atomic_and_replay_precedes_saturation(settings):
+    settings = settings.model_copy(update={"max_active_batches": 1})
+    runner = FakeRunner(blocked=True)
+    async with session(settings, runner) as (client, coord, _):
+        fixtures = [batch(1, count=1), batch(2, count=1)]
+        results = await asyncio.gather(
+            *(post(client, settings, item, owner=i + 1) for i, item in enumerate(fixtures))
+        )
+        assert sorted(result.status_code for result in results) == [202, 429]
+        accepted = next(i for i, result in enumerate(results) if result.status_code == 202)
+        replay = await post(client, settings, fixtures[accepted], owner=accepted + 1)
+        assert replay.status_code == 202 and replay.json() == results[accepted].json()
+        assert (
+            coord.store.db.execute("SELECT count(*) FROM batches WHERE active=1").fetchone()[0] == 1
+        )
+        assert (await client.get("/health/ready")).status_code == 200
+        runner.release.set()
+        await until(lambda: not coord.lanes)
+        other = 1 - accepted
+        assert (await post(client, settings, fixtures[other], owner=other + 1)).status_code == 202
+
+
 async def test_25_concurrent_lanes_and_maximum_queue(settings):
     runner = FakeRunner(blocked=True, crash=True)
     fixtures = [

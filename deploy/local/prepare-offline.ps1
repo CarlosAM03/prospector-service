@@ -99,6 +99,30 @@ try {
     }
     & docker @compose up -d --no-build --wait
     Assert-Native 'Starting the local stack'
+    $gateway = (& docker network inspect prospector-final-local_ingress --format '{{(index .IPAM.Config 0).Gateway}}').Trim()
+    Assert-Native 'Inspecting the dedicated loopback ingress bridge'
+    $socket = [Net.Sockets.TcpClient]::new('127.0.0.1',8443)
+    try {
+        $peers = foreach ($line in (& docker @compose exec -T nginx cat /proc/net/tcp)) {
+            $fields = $line.Trim() -split '\s+'
+            if ($fields.Count -lt 4 -or $fields[1] -notmatch ':20FB$' -or $fields[3] -ne '01') { continue }
+            $octets = @([regex]::Matches($fields[2].Split(':')[0], '..') | ForEach-Object { [Convert]::ToByte($_.Value,16) })
+            [Array]::Reverse($octets)
+            $octets -join '.'
+        }
+    } finally { $socket.Dispose() }
+    $expected = @('allow 127.0.0.1;','allow ::1;')
+    if ($peers -contains $gateway) { $expected += "allow $gateway/32;" }
+    elseif ($peers -notcontains '127.0.0.1') { throw 'Unable to confirm the Nginx peer from a loopback connection' }
+    if (Compare-Object $expected @(Get-Content -LiteralPath $acl)) {
+        [IO.File]::WriteAllLines($acl, [string[]]$expected, $utf8)
+        & docker @compose exec -T nginx nginx -t
+        Assert-Native 'Validating the exact loopback allowlist'
+        & docker @compose exec -T nginx nginx -s reload
+        Assert-Native 'Reloading the loopback allowlist'
+    }
+    & curl.exe --fail --silent --show-error --retry 2 --cacert $cert https://127.0.0.1:8443/health/ready
+    Assert-Native 'Checking Nginx readiness over trusted local TLS'
     & docker @compose ps
     Assert-Native 'Checking the local stack'
 } finally { Pop-Location }

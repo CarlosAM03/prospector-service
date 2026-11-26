@@ -11,7 +11,8 @@ services:
       HOST: 0.0.0.0
       METADATA_PATH: /var/lib/prospector/metadata.sqlite3
       WORKER_TEMP_DIR: /run/prospector-tmp
-      PROSPECTOR_CHROMIUM_SANDBOX: "${PROSPECTOR_CHROMIUM_SANDBOX:-1}"
+      PROSPECTOR_CHROMIUM_SANDBOX: "1"
+      MAX_ACTIVE_BATCHES: "${MAX_ACTIVE_BATCHES:-1}"
       SOLUTION_ID: ${SOLUTION_ID:?configure SOLUTION_ID}
       ASSERTION_ISSUER: ${ASSERTION_ISSUER:?configure ASSERTION_ISSUER}
       ASSERTION_AUDIENCE: ${ASSERTION_AUDIENCE:-prospector-service/v1}
@@ -60,7 +61,7 @@ services:
 networks:
   upstream: {internal: true}
   ingress: {}
-  egress: {}
+  egress: {internal: true}
 volumes:
   metadata: {}
 secrets:

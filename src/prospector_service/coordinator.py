@@ -58,7 +58,9 @@ class Coordinator:
         )
 
     def accept(self, actor, batch, key, body):
-        receipt, fresh = self.store.admit(actor, batch, key, body, bool(self.ready))
+        receipt, fresh = self.store.admit(
+            actor, batch, key, body, bool(self.ready), self.settings.max_active_batches
+        )
         if fresh:
             for job in batch.jobs:
                 row = self.store.update(actor.solution, job.jobId, self.clock().isoformat())

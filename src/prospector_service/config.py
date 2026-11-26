@@ -26,6 +26,7 @@ class Settings(BaseModel):
     engine_headless: bool = True
     prospector_chromium_sandbox: Literal["0", "1"] = "0"
     worker_temp_dir: Path = Path("/dev/shm")
+    max_active_batches: int = Field(default=1, ge=1, le=25)
     max_request_bytes: int = Field(default=65536, ge=1024, le=65536)
     max_snapshot_bytes: int = Field(default=1048576, ge=1024, le=4194304)
     snapshot_budget_bytes: int = Field(default=134217728, ge=1024, le=1073741824)
@@ -42,6 +43,8 @@ class Settings(BaseModel):
     def validate_runtime(self):
         if self.app_env == "production" and self.allow_local_callbacks:
             raise ValueError("local callbacks are unavailable in production")
+        if self.app_env == "production" and self.prospector_chromium_sandbox != "1":
+            raise ValueError("production requires the Chromium sandbox")
         if self.prospector_chromium_sandbox == "1" and self.engine_browser != "chromium":
             raise ValueError("the protected profile requires Playwright Chromium")
         keys = [

@@ -17,12 +17,22 @@ from prospector_service.config import Settings
         {"platform_callback_origin": "http://platform.example"},
         {"platform_callback_origin": "https://platform.example:invalid"},
         {"app_env": "production", "allow_local_callbacks": True},
+        {"app_env": "production", "prospector_chromium_sandbox": "0"},
+        {"max_active_batches": 0},
+        {"max_active_batches": 26},
         {"prospector_chromium_sandbox": "1", "engine_browser": "msedge"},
     ],
 )
 def test_invalid_settings(options):
     with pytest.raises(ValidationError):
         Settings(**options)
+
+
+def test_runtime_defaults_to_one_active_batch(monkeypatch):
+    monkeypatch.delenv("MAX_ACTIVE_BATCHES", raising=False)
+    assert Settings.from_env().max_active_batches == 1
+    monkeypatch.setenv("MAX_ACTIVE_BATCHES", "25")
+    assert Settings.from_env().max_active_batches == 25
 
 
 def test_secret_file_and_local_dev_only(monkeypatch, tmp_path):

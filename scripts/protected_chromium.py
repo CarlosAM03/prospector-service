@@ -11,6 +11,7 @@ from uuid import uuid4
 
 PROFILE_PATH = Path(__file__).resolve().parent / "vendor" / "playwright" / "seccomp_profile.json"
 PROFILE_HASH = "cc3e61cabda6bbc1e53e54d27ba4d55a9d3be829b6dd1a596f4a7b31b1cc7849"
+SERVICE_PROFILE_HASH = "f186342fd7e65bf0344df4b7bbe6b6735a92727a89c8e48cc7fa43630e1067f1"
 ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -43,6 +44,8 @@ def profiles(directory):
     )
     service = directory / "service-seccomp-lab.json"
     service.write_text(json.dumps(profile), encoding="utf-8")
+    if hashlib.sha256(service.read_bytes()).hexdigest() != SERVICE_PROFILE_HASH:
+        raise ValueError("approved Service seccomp profile hash mismatch")
     return [
         ("docker-default", None, True),
         ("playwright-upstream", upstream, False),
@@ -55,6 +58,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--image", default="prospector-service:ci")
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--service-only", action="store_true")
     args = parser.parse_args()
 
     info = subprocess.check_output(
@@ -71,6 +75,8 @@ def main():
     with tempfile.TemporaryDirectory(prefix="prospector-lab-") as scratch:
         directory = Path(scratch)
         for name, profile, integrated in profiles(directory):
+            if args.service_only and name != "service-pidfd-lab":
+                continue
             container = f"prospector-protected-{uuid4().hex[:12]}"
             command = [
                 "docker",

@@ -59,7 +59,10 @@ services:
       service: {condition: service_healthy}
     networks: [upstream, ingress]
 networks:
-  upstream: {internal: true}
+  upstream:
+    internal: true
+    driver_opts:
+      com.docker.network.bridge.gateway_mode_ipv4: isolated
   ingress: {}
   egress: {internal: true}
 volumes:

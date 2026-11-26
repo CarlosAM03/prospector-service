@@ -16,16 +16,17 @@ Mantener la VM sin entrada externa durante el ensayo. SEC-001 a SEC-006 autoriza
 
 ## Construir y ensayar
 
-Usar el checkout verificado del candidato. El archivo del overlay puede obtenerse del PR de este runbook. Verificar su origen junto con los archivos de Compose. Si Engine es privado, resolver el acceso de solo lectura antes de construir y evitar incluir credenciales en URLs, capas o contexto de Docker.
+Usar el checkout verificado que contiene el código y los controles SEC. Verificar el SHA aprobado junto con los archivos de Compose. Si Engine es privado, resolver el acceso de solo lectura antes de construir y evitar incluir credenciales en URLs, capas o contexto de Docker.
 
 ```bash
 git rev-parse HEAD
 git merge-base --is-ancestor bf150e4d4eeff80de83208446eb540d880e30048 HEAD
+export SERVICE_IMAGE="prospector-service:$(git rev-parse HEAD)"
 docker version
 docker compose version
 docker compose --env-file /etc/prospector/service.env --project-name prospector-gcp config --quiet
 docker compose --env-file /etc/prospector/service.env --project-name prospector-gcp build service
-docker image inspect prospector-service:bf150e4 --format '{{.Id}}'
+docker image inspect "$SERVICE_IMAGE" --format '{{.Id}}'
 ```
 
 Generar el perfil Playwright con chroot, pidfd_open y pidfd_send_signal. La generación verifica el input upstream y el resultado SEC-003. Usar un nombre de archivo nuevo para generar el perfil. Si el archivo ya existe, usar únicamente `--check`. Ejecutar el preflight con la etiqueta de la imagen candidata y guardar el resultado antes de abrir el puerto.
@@ -48,7 +49,7 @@ dc up -d --no-build --wait
 dc ps
 ```
 
-Verificar que Nginx es el único contenedor con puerto publicado, que Service está healthy y que una fuente excluida no alcanza la API. La red de salida del Compose base es interna.
+Verificar que Nginx es el único contenedor con puerto publicado, que Service está healthy y que una fuente excluida no alcanza la API. La red de salida del Compose base es interna. La red privada Nginx–Service requiere que Docker acepte `gateway_mode_ipv4=isolated`. Este modo quita la dirección del bridge del host. Verificarlo antes de abrir la VM. [Modos de gateway de Docker](https://docs.docker.com/engine/network/port-publishing/#gateway-modes)
 
 ## Salida de callbacks
 
@@ -57,8 +58,10 @@ Para conectar Render, confirmar su FQDN e IPv4 público efectivo. Archivar esa r
 Generar el archivo de reglas en la VM. El generador rechaza IPv4 privados, de metadata y no válidos. Revisar y cargar el archivo mediante el mecanismo persistente de nftables **antes** de aplicar el overlay. Confirmar que el nombre de la interfaz coincide y que no hay otro gateway de Service. Mantener las reglas de ingreso de GCP y de Nginx por separado.
 
 ```bash
-python3 deploy/gcp/render_callback_firewall.py "$PLATFORM_CALLBACK_IPV4" > /etc/nftables.d/prospector-egress.nft
-sudo nft --check --file /etc/nftables.d/prospector-egress.nft
+mkdir -p .validation
+python3 deploy/gcp/render_callback_firewall.py "$PLATFORM_CALLBACK_IPV4" > .validation/prospector-egress.nft
+sudo nft --check --file .validation/prospector-egress.nft
+sudo install -m 0644 .validation/prospector-egress.nft /etc/nftables.d/prospector-egress.nft
 sudo nft --file /etc/nftables.d/prospector-egress.nft
 sudo nft list table inet prospector_egress
 ```
@@ -70,8 +73,8 @@ En la función `dc`, añadir `-f deploy/gcp/compose.callback-egress.yaml` antes 
 ```bash
 # Desde una shell autorizada en Render
 curl --fail --silent --show-error --max-time 12 "https://NOMBRE_SERVICE:PUERTO/health/ready"
-# Desde GCP
-curl --fail --silent --show-error --max-time 12 "https://NOMBRE_BACKEND/api/v1/health/ready"
+# Desde el contenedor Service en GCP, usando su misma ruta de salida
+dc exec -T service python -c 'import os, urllib.request; u = os.environ["PLATFORM_CALLBACK_ORIGIN"] + "/api/v1/health/ready"; print(urllib.request.urlopen(u, timeout=12).status)'
 ```
 
 Estas sondas prueban conectividad y TLS. Después de integrar el receptor de callbacks, el flujo sintético autorizado debe comprobar batch, callbacks autenticados, deduplicación, escritura PostgreSQL, snapshot, ACK después de commit y purga. Verificar expiración, replay de 48 h y pérdida de snapshots al reiniciar. Mantener la generación apagada hasta la aceptación. Flutter usa solo el origen de NestJS.

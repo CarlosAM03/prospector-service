@@ -1,6 +1,3 @@
-Sí. Con el estado actual del Backend Platform y del cliente Flutter, podemos separar con bastante precisión qué parte de **Plataforma v1.0.0** está realmente bloqueada por el Prospector Service y qué parte todavía puede terminarse sin Python.
-
-La conclusión principal es: **la mayor parte de la plataforma v1.0.0 ya no depende del servicio externo**. La dependencia está concentrada casi totalmente en el ciclo operativo de `ProspectingJob` y en las funciones que consumen sus resultados.
 
 # Dependencias de Plataforma v1.0.0 respecto al Prospector Service
 

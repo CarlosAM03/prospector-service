@@ -1,0 +1,23 @@
+# Windows demonstration profile. No callback network or public listener.
+services:
+  service:
+    secrets: !reset []
+    volumes:
+      - service_credentials:/run/secrets:ro
+  nginx:
+    secrets: !reset []
+    volumes:
+      - nginx_credentials:/run/secrets:ro
+    ports: !override ["127.0.0.1:8443:8443"]
+networks:
+  egress:
+    internal: true
+    driver_opts:
+      com.docker.network.bridge.gateway_mode_ipv4: isolated
+volumes:
+  service_credentials:
+    external: true
+    name: prospector-final-service-credentials
+  nginx_credentials:
+    external: true
+    name: prospector-final-nginx-credentials

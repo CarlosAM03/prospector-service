@@ -85,7 +85,7 @@ Mantener consola abierta. Comprobar endpoint local del agente en 127.0.0.1:4040/
 
 ## Administración rápida
 
-Los scripts OPS de entrega se conservan en el paquete local del operador, fuera de Git: Common-, Start-, Status-, Stop-Prospector.ps1 y compose.online.yaml. Los scripts iniciales tienen identidad de imagen, repositorio, dominio y CIDR fijados para la instalación original; adaptar explícitamente esas referencias si se migra y volver a validar. Mantener el checkout de ejecución congelado (no apuntarlo a la rama documental). Con Docker Desktop iniciado:
+Los scripts OPS de entrega se conservan en el paquete local del operador, fuera de Git: Common-, Start-, Status-, Stop-, Backup-Prospector.ps1, LEEME.txt y compose.online.yaml. Los scripts iniciales tienen identidad de imagen, repositorio, dominio y CIDR fijados para la instalación original; adaptar explícitamente esas referencias si se migra y volver a validar. Mantener el checkout de ejecución congelado (no apuntarlo a la rama documental). Con Docker Desktop iniciado:
 
 ```powershell
 $ops = Join-Path $env:LOCALAPPDATA 'PROSPECTOR\OPS'
@@ -95,14 +95,14 @@ $ops = Join-Path $env:LOCALAPPDATA 'PROSPECTOR\OPS'
 & "$ops\Stop-Prospector.ps1"
 ```
 
-En RemoteSigned, revisar archivos descargados y desbloquear únicamente los cuatro PS1 confiables con Unblock-File; no rebajar política global. Status con TLS y egreso acreditado el 26/11/2026. Start/Stop automatizados pendientes de ensayo al escribir esta guía. Start mantiene ngrok en primer plano; si queda agente vacío tras Stop, cerrar solo su consola. Si API local falla o endpoint tiene URI inesperada, detenerse y revisar; no matar todos los agentes.
+En RemoteSigned, revisar archivos descargados y desbloquear únicamente los cuatro PS1 confiables con Unblock-File; no rebajar política global. Status con TLS y egreso acreditado el 26/11/2026. Stop y Start comprobados operacionalmente, incluido el arranque posterior al apagado de Windows. La versión instalada de Stop aún mostró el aviso de --time obsoleto; usar --timeout 90 en una intervención posterior. No cambiar scripts durante la demostración. Start mantiene ngrok en primer plano; si queda agente vacío tras Stop, cerrar solo su consola. Si API local falla o endpoint tiene URI inesperada, detenerse y revisar; no matar todos los agentes.
 
 ## Respaldo y restauración
 
 Antes de detener: coordinar ventana sin nuevas solicitudes, comprobar todos los tenants, terminar exportación/incorporación y ACK/purga. Snapshots comerciales viven en RAM, no se recuperan mediante backup. No hay bloqueo global de admisión en scripts OPS; la comprobación es manual. Desconectar solo endpoint de PROSPECTOR y detener solo Nginx y Service (90 s). No usar compose down -v, prune, reset WSL/Docker, ni eliminar recursos de otros proyectos.
 
 Con contenedores detenidos y sin otro proceso usando los volúmenes:
-1. Guardar ambas imágenes con docker image save -o (Service por tag, Nginx por digest; si el CLI no admite referencia digest, guardar por ID y comprobar que la referencia Compose se restaura). Verificar tar y SHA256.
+1. Guardar ambas imágenes con docker image save -o (Service por tag y Nginx mediante alias local prospector-nginx:recovery-7377697a821c, comprobando que su ID coincide con el digest original). Verificar tar y SHA256.
 2. Guardar metadata, service_credentials y nginx_credentials en tar.gz separados mediante contenedor auxiliar de la imagen Service, red none, raíz ro, volumen origen readonly, usuario root solo para preservar propietario/permisos. Guardar WAL/SHM. Verificar SQLite quick_check sobre copia temporal, no original.
 3. Copiar configuración privada (sin cuenta smoke si no se necesita), scripts OPS y overlay a carpeta protegida; no incluir authtoken ngrok. Guardar versión Docker, SHA de código, ID imágenes, inspección de redes sin secretos y checksums. Proteger archivos en disco con ACL y cifrado, en particular antes de copiar a HDD. Un hash no cifra.
 4. Conservar copia del código congelado (git bundle o clon). No incluir credenciales ni archivos sin seguimiento.
@@ -112,4 +112,82 @@ Restauración: validar hashes, cargar imágenes, comprobar identidad y referenci
 
 ## Evidencia y riesgos
 
-El 26/11 se recuperaron imágenes tras eliminación accidental, se preservaron los tres volúmenes, se comprobó SQLite quick_check=ok, se reconstruyó Service y se recuperó Nginx fijado, se validó Compose online, TLS local y egreso HTTP 200 hacia Platform y Google Maps. Se observaron admisiones y callbacks HTTP 200 desde la integración productiva. No se considera acreditado el ciclo de Stop/Start ni la restauración completa de backup hasta registrar sus resultados. El host presentó apagados inesperados y error recurrente de boot 0xc0000098; mantener corriente, ventilación, evitar suspensión durante la presentación y disponer de contingencia. No atribuir causa al SSD sin diagnóstico.
+El 26/11 se recuperaron imágenes tras eliminación accidental, se preservaron los tres volúmenes, se comprobó SQLite quick_check=ok, se reconstruyó Service y se recuperó Nginx fijado, se validó Compose online, TLS local y egreso HTTP 200 hacia Platform y Google Maps. Se observaron admisiones y callbacks HTTP 200 desde la integración productiva. El ciclo Stop/Start quedó acreditado el 26/11; el operador reportó haber completado el respaldo y reiniciado. No se recibió la salida final BACKUP PASS ni el inventario SHA256.csv; la integridad del respaldo y la restauración en otro host siguen sin acreditación independiente. El host presentó apagados inesperados y error recurrente de boot 0xc0000098; mantener corriente, ventilación, evitar suspensión durante la presentación y disponer de contingencia. No atribuir causa al SSD sin diagnóstico.
+
+
+## Runbook de recuperación desde un respaldo privado (local o HDD)
+
+Estado: procedimiento documental revisado, **restauración integral NOT_RUN**. No ejecutar sobre el host que está sirviendo la presentación. No publicar el backup ni sus secretos en GitHub. El backup no es una copia de PostgreSQL de Platform ni de snapshots RAM. Una copia del Engine está integrada en la imagen Service; el bundle contiene únicamente el repositorio Service.
+
+### 1. Seleccionar y comprobar el respaldo
+
+Seleccionar explícitamente el directorio recovery-* que terminó con BACKUP PASS, no simplemente el más reciente. Los intentos 145721, 150008 y 171947 del 26/11 mostraron errores y no son respaldos acreditados por sus nombres. El operador reportó un intento posterior satisfactorio, aún sin salida final compartida.
+
+```powershell
+$backup = 'X:\ruta\recovery-YYYYMMDD-HHMMSS' # o carpeta local exacta
+$required = @('images.tar','manifest.json','SHA256.csv','service-source.bundle',
+  'prospector-final-local_metadata.tar.gz',
+  'prospector-final-service-credentials.tar.gz',
+  'prospector-final-nginx-credentials.tar.gz','EntregaFinal','OPS')
+foreach ($f in $required) {
+  if (-not (Test-Path -LiteralPath (Join-Path $backup $f))) { throw "Falta $f" }
+}
+$rows = @(Import-Csv -LiteralPath (Join-Path $backup 'SHA256.csv'))
+if ($rows.Count -eq 0) { throw 'Inventario vacío' }
+$base = [IO.Path]::GetFullPath($backup).TrimEnd('\') + '\'
+foreach ($h in $rows) {
+  $p = [IO.Path]::GetFullPath((Join-Path $base $h.Path))
+  if (-not $p.StartsWith($base,[StringComparison]::OrdinalIgnoreCase)) { throw 'Ruta fuera del backup' }
+  if ((Get-Item -LiteralPath $p -ErrorAction Stop).Length -ne [long]$h.Bytes -or
+      (Get-FileHash -LiteralPath $p -Algorithm SHA256).Hash -ne $h.SHA256) { throw "Integridad incorrecta: $($h.Path)" }
+}
+$actual = @(Get-ChildItem -LiteralPath $backup -File -Recurse | Where-Object {$_.FullName -ne (Join-Path $backup 'SHA256.csv')})
+if ($actual.Count -ne $rows.Count -or @($rows.Path | Sort-Object -Unique).Count -ne $rows.Count) { throw 'Inventario incompleto o duplicado' }
+Write-Host 'HASH PASS'
+```
+
+Conservar SHA256.csv por separado en un medio confiable si se requiere detectar manipulación deliberada: los hashes del mismo backup solo comprueban consistencia. Cifrar el HDD/medio de destino antes de copiar (ACL no equivale a cifrado). Copiar el directorio completo y repetir HASH PASS en el destino. No eliminar la copia local.
+
+### 2. Recuperar código e imágenes en un host aislado
+
+- Instalar Docker Desktop con WSL2, Git y ngrok; verificar arquitectura compatible y espacio. Mantener ngrok desconectado.
+- Clonar el bundle con `git clone <ruta/service-source.bundle> <destino>` (HEAD puede quedar detached); comprobar `git rev-parse HEAD` contra manifest.serviceCommit y contra la revisión congelada. Si se usa GitHub, checkout detached en f4a6292 o 296ed07. No apuntar los scripts OPS a un merge documental posterior.
+- Leer manifest.json sin publicar datos privados. Ejecutar `docker image load -i <ruta/images.tar>` y comprobar ambos IDs mediante `docker image inspect` de los tags prospector-service:entrega-final y prospector-nginx:recovery-7377697a821c.
+- Docker load puede no reconstruir RepoDigests. Comprobar explícitamente la referencia Nginx por digest que requiere Compose. Si falta, recuperar esa referencia con `docker pull nginxinc/nginx-unprivileged@sha256:7377697a821c131a924a7105fafbe7414db4e9fcc77a6f08f776f33f141ec3f8` y comparar ID contra el manifest. Sin acceso a registry, detener la recuperación online; usar el alias en un overlay requeriría adaptación y validación explícitas de OPS, no fingir que el digest existe.
+- No reconstruir Service si el archivo y su ID son válidos. No borrar imágenes existentes.
+
+### 3. Configuración, volúmenes y redes
+
+Restaurar EntregaFinal y OPS en %LOCALAPPDATA%\PROSPECTOR con ACL privadas (sin sobrescribir instalación existente). Ajustar únicamente rutas absolutas de service.env y localización del repositorio en Common-Prospector.ps1 si cambia el host, conservando claves, solución, límites, TLS, imágenes, topología y políticas. Validar certificado y peer ingress antes de publicar. No regenerar metadata_key. Los scripts guardados fijan las revisiones permitidas y el digest; no desactivar sus verificaciones.
+
+Crear los tres volúmenes exactos solo si no existen, con Docker sin consumidores. Para cada volumen ejecutar el siguiente patrón desde PowerShell, con $v uno de los tres nombres del inventario:
+
+```powershell
+$v = 'prospector-final-local_metadata'
+# Únicamente para un volumen NUEVO, comprobado vacío.
+docker volume create $v
+if ($LASTEXITCODE -ne 0) { throw 'No se pudo crear volumen' }
+docker run --rm --pull never --network none --read-only --user 0:0 --mount "type=volume,source=$v,target=/restore" --mount "type=bind,source=$backup,target=/backup,readonly" --entrypoint tar prospector-service:entrega-final -xzf "/backup/$v.tar.gz" -C /restore
+if ($LASTEXITCODE -ne 0) { throw 'Restauración de volumen fallida' }
+```
+
+Repetir para prospector-final-service-credentials y prospector-final-nginx-credentials. No ejecutar sobre un volumen existente, incluso si parece vacío. Comprobar UID/GID y modos; verificar SQLite quick_check sobre copia temporal de metadata (incluidos WAL/SHM si existen), no sobre el volumen original activo. Usar manifest y Compose para recrear redes: crear únicamente la externa prospector-online-egress si falta; permitir que Compose cree las internas según el perfil aprobado. Antes de Start, crear contenedores/redes sin arrancar usando los cuatro archivos Compose y `docker compose ... create --no-build --pull never`; comprobar que el volumen metadata restaurado tiene el nombre exacto y que Compose no creó uno alternativo. No usar prepare-offline -Start sobre los recursos restaurados.
+
+### 4. Aceptación y puesta online
+
+Autenticar ngrok por separado mediante cuenta autorizada (authtoken y configuración del agente no están en backup). Mantener el dominio asignado original. Verificar que el coordinador anterior esté apagado antes de conectar el nuevo. Ejecutar Start y Status -Egress en consolas separadas; verificar allowlist y readiness TLS sin bypass. Si el certificado caducó, renovar coordinadamente antes de iniciar. Realizar un smoke pequeño desde Vercel: admisión, callbacks, reconciliación, CSV/XLSX antes de confirmar, incorporación PostgreSQL, ACK y purga. Registrar SHA, hashes, host y resultados. No declarar restauración PASS hasta completar este ensayo.
+
+### 5. Incidentes de OPS conocidos
+
+- Windows PowerShell 5.1: consultar un alias inexistente con docker image inspect y redirigir stderr puede lanzar NativeCommandError. Mitigación acreditada: crear el alias local de Nginx desde el digest fijado antes de Backup; comprobar igualdad de IDs y no sobrescribir un alias ajeno. El parche de Backup que enumera tags primero está preparado pero no acreditado como instalado.
+- Backup rechaza endpoint abierto o volúmenes activos; no desactivar esas barreras. Verificar docker ps para el proyecto y para cada volumen antes y durante el respaldo; si reaparecen contenedores, identificar el proceso que los inicia. RestartPolicy=no observado. No matar procesos ajenos.
+- Stop aún usa --time en la instalación observada; su sustitución por --timeout y postcondición de apagado quedan pendientes de desplegar/ensayar. No aplicar durante la clase.
+- No recuperar un backup antiguo sobre estado actual sin considerar que Platform conserva registros posteriores; no retroceder metadata silenciosamente.
+
+## Cierre de evidencia productiva — 2026-11-26, previo a clase
+
+Frontend main c63cfa11af2ee406a96ce327827f1e76ff28989c (PR #18), Vercel READY; Backend 590aaf0dda98fd42befc4f3ed432d028d23d3946. No se modificaron Service ni Engine durante la aceptación. Start posterior al apagado y Status -Egress acreditados; TLS local, Render y Google Maps HTTP 200. Primer lote Telecom: 20 resultados incorporados, 11 callbacks persistidos, ACK y purga confirmados. Render registró un 502 de reconciliación a las 17:35:59 y recuperación 200 a las 17:36:02; causa raíz no determinada. No atribuirlo a pérdida de callbacks o cold start sin evidencia.
+
+Consulta PostgreSQL de solo lectura: cuatro lotes Telecom admitidos (1, 2, 3 y 4 consultas), 10/10 consultas completadas, 220 decisiones procesadas como incorporadas y 3 omitidas, 10/10 ACK y purgas confirmados. Cuatro intentos rechazados con 409; compatibles con límite de un lote activo por usuario/tenant, código remoto exacto no capturado. No se ejecutó lote de cinco consultas ni se acreditó concurrencia multiusuario. Dashboard observado: dos campañas, 392 prospectos únicos según métrica UI y diez lotes históricos del usuario; los 220 incorporados son conteos de confirmaciones, no incremento de prospectos únicos. No confundir vinculación/incorporación con creación de maestros. El registro de lote rechazado puede producir 404 al reconciliarlo, limitación conocida del frontend.
+
+Dictamen: despliegue académico operativo; documentación de recuperación lista. Respaldo integral reportado por operador, verificación independiente de manifiesto/hashes, copia HDD y ensayo de recuperación en otro host pendientes. No bloquear la presentación por esos ensayos ni poner en riesgo el host activo.

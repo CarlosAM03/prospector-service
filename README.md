@@ -6,6 +6,7 @@ Candidato de servicio HTTP privado para Platform. Admite batches FIFO de 1–5 c
 - [OpenAPI 3.1](docs/contracts/batch-api.v1.openapi.json)
 - [ADR ratificadas y trazabilidad](docs/service-v1-prelim/decisiones-v1.md)
 - [Ejecución, despliegue y recuperación](docs/deployment-v1.md)
+- [Perfil académico Windows + ngrok: operación y recuperación](docs/deployment-windows-ngrok.md)
 - [Gates y evidencia](docs/acceptance-v1.md)
 - [Convergencia con Engine, seguridad y sandbox](docs/engine-convergence-v1.md)
 
